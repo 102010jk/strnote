@@ -95,8 +95,32 @@ Co z toho plyne pro rozhodování:
 
 Roj není prototyp k zahození, nese se dál:
 
-- **Výkon není riziko.** 100 000 těles běží na 7–8 ms na snímek. Deník bude mít
-  řádově stovky až tisíce zápisků, takže vizuální stránka má obrovskou rezervu.
+- **Výkon není riziko, a to s velkou rezervou.** Reálný strop je kolem 1000
+  zápisků; 100 000 byl schválně přehnaný test, aby bylo vidět, kde je hrana.
+
+  Naměřeno při 1000 tělesech (desktop, 1622×914), každé měření dvakrát:
+
+  | Co | ms/snímek |
+  |---|---|
+  | prázdná scéna (1 těleso) | 0,13 |
+  | 1000 těles, detail 12×8 | 0,19 |
+  | 1000 těles, detail 48×32 (3 M trojúhelníků) | 0,19 |
+  | z toho bloom | 0,07 |
+
+  Celá 3D scéna tedy stojí **zhruba 1 % rozpočtu na 60 fps**. Zbylých 99 %
+  je volných na to, co aplikace teprve bude dělat.
+
+  Dva důsledky pro stavbu:
+
+  - **Zjednodušování geometrie nemá pod ~20 000 tělesy smysl.** Tři miliony
+    trojúhelníků stojí stejně jako sto sedmdesát tisíc – úzké hrdlo je bloom
+    přes celou obrazovku, ne geometrie. Tělesa můžou být dokonale kulatá;
+    stupně detailu v `_setDetail` jsou nastavené pro stotisícový test
+    a při skutečném počtu zbytečně ubírají na kvalitě.
+  - **Planety můžou být opravdu osvětlené svou hvězdou** místo ploché šedé.
+    Přesně ten vzhled, co má Universe Sandbox: přisvícená strana, terminátor,
+    stín. Při tisícovce těles a hrstce světel je to v rozpočtu bez problému.
+    Teď jsou ploché jen proto, že sto tisíc stínovaných koulí by nedávalo smysl.
 - **Hierarchie a planety** jsou přesně ta struktura, kterou zápisník potřebuje:
   hvězda jako téma, planety jako zápisky pod ním, měsíce jako poznámky k nim.
 - **Odpojená kamera** je základ pro „doleť k tomuhle zápisku" – hledání bude

@@ -26,6 +26,7 @@ src/core/App.js          renderer, kamera, OrbitControls, resize, smyčka, FPS
 src/core/environment.js  procedurální env mapa pro odlesky (bez HDR souboru)
 CHANGELOG.md             co přibylo v které verzi
 CLAUDE.md                pravidla pro práci v tomhle repu
+docs/koncept.md          kam projekt směřuje a co je otevřené
 docs/mobile.md           jak z tohohle udělat appku pro Android a iOS
 docs/instancing.md       jak scéna utáhne 100 000 těles, záře v shaderu, nekonečný zoom
 src/scenes/MainScene.js  ← obsah scény, tohle je soubor, který se přepisuje

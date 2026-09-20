@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0 – 2026-09-20
+
+Světlo se teď počítá, ne kreslí z obrázku. Záře kolem každého tělesa vzniká
+výpočtem pro každý pixel, takže se ani při maximálním přiblížení nerozmaže
+a nemá okraje. Na výběr jsou tři podoby: měkká, fyzikální (ubývá s druhou
+mocninou vzdálenosti) a hvězda s difrakčními paprsky.
+
+Přibyly typy oběhu. Kromě dosavadní koule jde vybrat disk, kde všechno obíhá
+v jedné rovině jako galaxie, a hierarchie, kde tělesa obíhají jedno druhé –
+vznikají z toho soustavy planet a měsíců.
+
+Test jde na 100 000 těles a poloměr oběhu na 20 000. U každého posuvníku
+je políčko na přesné číslo, takže se hodnota dá napsat, ne jen natrefit myší.
+
+Opraveno: ovládací panel byl uříznutý, expozice a podlaha nešly dosáhnout.
+Roj při velkém oddálení blikal – kolísání jasu kleslo ze 0,68 % na 0,04 %.
+
+100 000 těles běží na 6 ms na snímek. Jak: [docs/instancing.md](docs/instancing.md).
+
 ## 1.2.1 – 2026-09-20
 
 Oprava: po nasazení nové verze se napoprvé pořád ukazovala ta stará a nová

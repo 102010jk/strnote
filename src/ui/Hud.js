@@ -1,6 +1,6 @@
 /**
  * Postaví ovládací panel z popisu v `scene.controls` a napojí ho na scénu.
- * Žádná UI knihovna – přidání dalšího slideru se dělá ve scéně, ne tady.
+ * Žádná UI knihovna – přidání dalšího ovladače se dělá ve scéně, ne tady.
  */
 export function createHud({ app, scene }) {
   const panel = document.querySelector('[data-panel]');
@@ -28,7 +28,7 @@ export function createHud({ app, scene }) {
   syncMotionLabel();
 
   window.addEventListener('keydown', (event) => {
-    if (event.target instanceof HTMLInputElement) return;
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
 
     if (event.code === 'Space') {
       event.preventDefault();
@@ -69,42 +69,98 @@ function buildControl(control) {
   label.textContent = control.label;
   head.append(label);
 
-  const input = document.createElement('input');
-  input.dataset.control = control.id;
-
   if (control.type === 'color') {
-    input.type = 'color';
-    input.value = control.get();
-    input.addEventListener('input', () => control.set(input.value));
+    wrapper.append(head, colorInput(control));
   } else if (control.type === 'toggle') {
-    input.type = 'checkbox';
-    input.checked = Boolean(control.get());
-    input.addEventListener('change', () => control.set(input.checked));
     wrapper.classList.add('field--toggle');
+    wrapper.append(head, toggleInput(control));
+  } else if (control.type === 'select') {
+    wrapper.append(head, selectInput(control));
   } else {
-    const value = document.createElement('span');
-    value.className = 'field__value';
-
-    const render = (v) => {
-      value.textContent = control.step >= 1 ? String(Math.round(v)) : Number(v).toFixed(2);
-    };
-
-    input.type = 'range';
-    input.min = control.min;
-    input.max = control.max;
-    input.step = control.step;
-    input.value = control.get();
-    render(control.get());
-
-    input.addEventListener('input', () => {
-      const v = Number(input.value);
-      control.set(v);
-      render(v);
-    });
-
-    head.append(value);
+    wrapper.append(head, ...rangeInputs(control, head));
   }
 
-  wrapper.append(head, input);
   return wrapper;
+}
+
+function colorInput(control) {
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.dataset.control = control.id;
+  input.value = control.get();
+  input.addEventListener('input', () => control.set(input.value));
+  return input;
+}
+
+function toggleInput(control) {
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.dataset.control = control.id;
+  input.checked = Boolean(control.get());
+  input.addEventListener('change', () => control.set(input.checked));
+  return input;
+}
+
+function selectInput(control) {
+  const select = document.createElement('select');
+  select.dataset.control = control.id;
+
+  for (const option of control.options) {
+    const element = document.createElement('option');
+    element.value = String(option.value);
+    element.textContent = option.label;
+    select.append(element);
+  }
+
+  select.value = String(control.get());
+  select.addEventListener('change', () => control.set(Number(select.value)));
+  return select;
+}
+
+/** Posuvník plus políčko na přesné číslo – obojí drží stejnou hodnotu. */
+function rangeInputs(control, head) {
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.dataset.control = control.id;
+  range.min = control.min;
+  range.max = control.max;
+  range.step = control.step;
+  range.value = control.get();
+
+  const number = document.createElement('input');
+  number.type = 'number';
+  number.className = 'field__value';
+  number.dataset.controlNumber = control.id;
+  number.min = control.min;
+  number.max = control.max;
+  number.step = control.step;
+  number.value = format(control.get());
+  head.append(number);
+
+  const apply = (raw, source) => {
+    const value = clamp(Number(raw), control.min, control.max);
+    if (!Number.isFinite(value)) return;
+
+    control.set(value);
+    if (source !== range) range.value = String(value);
+    if (source !== number) number.value = format(value);
+  };
+
+  range.addEventListener('input', () => apply(range.value, range));
+
+  // až po opuštění políčka nebo Enteru, ať se nepřepisuje během psaní
+  number.addEventListener('change', () => apply(number.value, number));
+  number.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') number.blur();
+  });
+
+  function format(value) {
+    return control.step >= 1 ? String(Math.round(value)) : String(Number(value.toFixed(3)));
+  }
+
+  return [range];
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }

@@ -1,6 +1,6 @@
 # strnote
 
-three.js scéna, která běží přímo z GitHub Pages. **Žádný build krok, žádné závislosti** –
+Koule světla v three.js, běží přímo z GitHub Pages. **Žádný build krok, žádné závislosti** –
 repozitář *je* ten web, takže cokoliv commitneš do `main`, to se nasadí tak, jak to leží.
 
 🔗 https://102010jk.github.io/strnote/
@@ -22,6 +22,8 @@ styles/main.css          UI vrstva nad canvasem
 src/main.js              vstupní bod: složí App + scénu + HUD
 src/core/App.js          renderer, kamera, OrbitControls, resize, smyčka, FPS
 src/core/environment.js  procedurální env mapa pro odlesky (bez HDR souboru)
+CHANGELOG.md             co přibylo v které verzi
+CLAUDE.md                pravidla pro práci v tomhle repu
 src/scenes/MainScene.js  ← obsah scény, tohle je soubor, který se přepisuje
 src/ui/Hud.js            napojení sliderů a tlačítek na scénu
 .github/workflows/       deploy na Pages při každém pushi do main

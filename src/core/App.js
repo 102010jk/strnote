@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createStudioEnvironment } from './environment.js';
 
 const MAX_PIXEL_RATIO = 2;
@@ -20,6 +24,7 @@ export class App {
       cameraPosition = [7.5, 5.5, 9.5],
       cameraTarget = [0, 0.8, 0],
       environment = true,
+      bloom = { strength: 1.15, radius: 0.55, threshold: 0.15 },
     } = options;
 
     this.canvas = canvas;
@@ -64,6 +69,18 @@ export class App {
       target: this.controls.target.clone(),
     };
 
+    // bloom – bez něj koule světla vypadá jako obyčejná bílá kulička
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(1, 1),
+      bloom.strength,
+      bloom.radius,
+      bloom.threshold,
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+
     this.clock = new THREE.Clock();
 
     this._onResize = () => this.resize();
@@ -97,8 +114,11 @@ export class App {
 
     const aspect = width / Math.max(height, 1);
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height, false);
+    this.composer?.setPixelRatio(pixelRatio);
+    this.composer?.setSize(width, height);
 
     this.camera.aspect = aspect;
     // na úzkých displejích rozšíříme FOV, aby scéna zůstala vodorovně v záběru
@@ -146,7 +166,7 @@ export class App {
 
     this.controls.update();
     for (const fn of this.updaters) fn(delta, elapsed);
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render(delta);
   };
 
   dispose() {
@@ -156,6 +176,7 @@ export class App {
     this.canvas.removeEventListener('webglcontextlost', this._onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onContextRestored);
     this.controls.dispose();
+    this.composer.dispose();
     this.scene.environment?.dispose?.();
     this.renderer.dispose();
   }

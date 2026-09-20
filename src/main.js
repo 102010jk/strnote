@@ -18,8 +18,14 @@ function fail(error) {
 }
 
 try {
-  const app = new App(canvas);
-  const scene = new MainScene();
+  const app = new App(canvas, {
+    background: 0x05070c,
+    fog: null,
+    cameraPosition: [0, 2.4, 9.5],
+    cameraTarget: [0, 0, 0],
+    environment: false, // scénu má osvětlovat jen ta koule
+  });
+  const scene = new MainScene(app);
 
   app.scene.add(scene.group);
   app.onUpdate((delta, elapsed) => scene.update(delta, elapsed));

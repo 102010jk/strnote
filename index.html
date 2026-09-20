@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>strnote</title>
+<meta name="description" content="three.js scéna běžící přímo z GitHub Pages — bez build kroku.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%230a0c11'/><circle cx='8' cy='8' r='3.4' fill='%236aa9ff'/></svg>">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="./styles/main.css">
+
+<!-- Jediné místo, kde se verze three.js mění. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="boot" class="boot">
+    <div class="boot__inner">
+      <div class="boot__spinner" aria-hidden="true"></div>
+      <p class="boot__text" data-boot-text>Načítám scénu…</p>
+    </div>
+  </div>
+
+  <header class="hud hud--top">
+    <div class="brand">
+      <span class="brand__dot" aria-hidden="true"></span>
+      <span class="brand__name">strnote</span>
+    </div>
+    <div class="stats">
+      <span class="stat"><span data-fps>–</span> fps</span>
+    </div>
+  </header>
+
+  <aside class="hud hud--panel" aria-label="Ovládání scény">
+    <label class="field">
+      <span class="field__label">Amplituda</span>
+      <input type="range" data-control="amplitude" min="0" max="1.4" step="0.01" value="0.55">
+    </label>
+    <label class="field">
+      <span class="field__label">Rychlost</span>
+      <input type="range" data-control="speed" min="0" max="2.5" step="0.01" value="1">
+    </label>
+    <div class="row">
+      <button type="button" data-action="toggle-motion">Pauza</button>
+      <button type="button" data-action="reset-view">Reset</button>
+    </div>
+    <p class="hint"><kbd>H</kbd> skrýt UI · <kbd>Mezerník</kbd> pauza</p>
+  </aside>
+
+  <noscript>
+    <div class="noscript">Tahle stránka potřebuje JavaScript a WebGL.</div>
+  </noscript>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

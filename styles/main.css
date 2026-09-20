@@ -1,0 +1,228 @@
+:root {
+  --bg: #0a0c11;
+  --fg: #e7ecf5;
+  --muted: #8d97ab;
+  --line: rgba(255, 255, 255, 0.1);
+  --panel: rgba(16, 20, 28, 0.66);
+  --accent: #6aa9ff;
+  --pad: 16px;
+  --font: ui-sans-serif, system-ui, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 14px/1.45 var(--font);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* ---------- boot / error ---------- */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  z-index: 20;
+  transition: opacity .5s ease;
+}
+
+.boot__inner {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: min(520px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.boot__spinner {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 720ms linear infinite;
+}
+
+.boot__text {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .04em;
+  white-space: pre-wrap;
+}
+
+body.is-ready .boot {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.has-error .boot__spinner {
+  display: none;
+}
+
+body.has-error .boot__text {
+  color: #ff8a7a;
+  text-align: left;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- hud ---------- */
+
+.hud {
+  position: fixed;
+  z-index: 10;
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+body.hud-hidden .hud {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+
+.hud--top {
+  top: max(var(--pad), env(safe-area-inset-top, 0px));
+  left: var(--pad);
+  right: var(--pad);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.brand__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.stats {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hud--panel {
+  right: var(--pad);
+  bottom: max(var(--pad), env(safe-area-inset-bottom, 0px));
+  width: 224px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+button {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+button:hover { background: rgba(255, 255, 255, 0.1); }
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  z-index: 30;
+  padding: 24px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .hud--panel {
+    left: var(--pad);
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot__spinner { animation-duration: 3s; }
+}

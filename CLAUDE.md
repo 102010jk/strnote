@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-Statický three.js web pro GitHub Pages. **Repozitář je ten web** – žádný build krok,
-žádné npm závislosti. Struktura a spouštění: [README.md](README.md).
+Statický three.js web pro GitHub Pages **a zároveň základ mobilní aplikace**
+(Android + iOS přes Capacitor). Struktura a spouštění: [README.md](README.md),
+mobil: [docs/mobile.md](docs/mobile.md).
 
 ## Pravidla
 
@@ -10,7 +11,8 @@ Po každém commitu přidej záznam do `CHANGELOG.md`. Krátce a lidsky – co j
 z pohledu toho, kdo se na web dívá. Žádný výpis souborů, žádné technické detaily.
 
 ### Verzování
-SemVer, začínáme na `1.0.0`. Číslo drž stejné v `CHANGELOG.md` i `package.json`.
+SemVer. Číslo drž stejné na třech místech: `CHANGELOG.md`, `package.json`
+a konstanta `VERSION` v `sw.js` (podle ní se čistí offline cache).
 
 - **patch** – oprava, drobnost
 - **minor** – nová funkce nebo nová scéna
@@ -21,7 +23,15 @@ Když přibude něco velkého (nový systém, postprocessing, načítání model
 napiš k tomu `docs/<téma>.md` – tam už klidně technicky: jak to funguje, proč takhle,
 na co si dát pozor. V changelogu na to stačí jednořádkový odkaz.
 
+### Web bez buildu, aplikace s buildem
+Web na Pages musí zůstat bez build kroku – platí „commitni a je to nasazené",
+takže do něj nepřidávat bundler ani runtime závislosti.
+
+Nativní appka má vlastní pipeline: `npm run bundle` vyrobí `www/` se staženým
+three.js. Tam build krok patří a je to v pořádku. `www/` se needituje ručně.
+
 ### Co nedělat bez vyžádání
-- Nepřidávat bundler ani npm balíčky – musí platit „commitni a je to nasazené".
 - Verze three.js se mění jen na jednom místě: v importmapě v `index.html`.
+  `npm run bundle` si ji odtamtud přečte sám.
 - Nesahat na `.github/workflows/deploy.yml`, pokud nasazení funguje.
+- Neměnit `appId` v `capacitor.config.json` po prvním vydání do obchodu.

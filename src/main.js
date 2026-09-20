@@ -1,6 +1,7 @@
 import { App } from './core/App.js';
 import { MainScene } from './scenes/MainScene.js';
 import { createHud } from './ui/Hud.js';
+import { registerServiceWorker } from './core/pwa.js';
 
 const canvas = document.getElementById('scene');
 const bootText = document.querySelector('[data-boot-text]');
@@ -37,6 +38,8 @@ try {
 
   // pohodlný přístup z konzole při ladění
   window.strnote = { app, scene };
+
+  registerServiceWorker();
 } catch (error) {
   fail(error);
 }

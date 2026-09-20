@@ -8,7 +8,9 @@ repozitář *je* ten web, takže cokoliv commitneš do `main`, to se nasadí tak
 ## Jak to běží lokálně
 
 ```bash
-npm run dev      # http://127.0.0.1:5173
+npm run dev      # http://127.0.0.1:5174
+npm run icons    # přegeneruje ikony aplikace
+npm run bundle   # vyrobí www/ pro nativní appku (Android/iOS)
 ```
 
 `scripts/dev-server.mjs` je statický server napsaný jen na node standardní knihovně
@@ -24,6 +26,7 @@ src/core/App.js          renderer, kamera, OrbitControls, resize, smyčka, FPS
 src/core/environment.js  procedurální env mapa pro odlesky (bez HDR souboru)
 CHANGELOG.md             co přibylo v které verzi
 CLAUDE.md                pravidla pro práci v tomhle repu
+docs/mobile.md           jak z tohohle udělat appku pro Android a iOS
 src/scenes/MainScene.js  ← obsah scény, tohle je soubor, který se přepisuje
 src/ui/Hud.js            napojení sliderů a tlačítek na scénu
 .github/workflows/       deploy na Pages při každém pushi do main

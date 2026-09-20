@@ -24,6 +24,19 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+
+  /* ať se to chová jako aplikace, ne jako stránka:
+     žádné označování textu, žádná lupa a menu po přidržení prstu */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
 }
 
 #scene {

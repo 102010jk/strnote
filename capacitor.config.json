@@ -1,0 +1,16 @@
+{
+  "appId": "com.strnote.app",
+  "appName": "strnote",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#05070c"
+  },
+  "ios": {
+    "backgroundColor": "#05070c",
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}

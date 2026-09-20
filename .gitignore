@@ -6,3 +6,8 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+# balík pro nativní obal – generuje se přes `npm run bundle`
+www/
+
+# android/ a ios/ se NEignorují – až je Capacitor vytvoří, patří do repa,
+# jinak se ztratí nativní nastavení (oprávnění, ikony, splash)

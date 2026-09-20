@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0 – 2026-09-20
+
+Roj už není jednobarevný. Místo jedné barvy se volí dvě a každé těleso dostane
+odstín někde mezi nimi plus malé náhodné okolí, jak široké se řídí posuvníkem.
+
+Nový typ oběhu **Planety**: každá hvězda dostane 0 až 9 planet, které obíhají
+ji. Planety jsou šedé a menší, hvězdy si drží barvu – vypadá to jako hvězdné
+pole s vlastními soustavami.
+
+Kamera má dva režimy. Na střed krouží kolem pevného bodu jako dosud, odpojená
+se dá odtáhnout myší kamkoliv. Uprostřed scény už taky nestojí žádné těleso.
+
+Sto tisíc těles běží 7,3–8,1 ms na snímek podle typu oběhu.
+
 ## 1.3.0 – 2026-09-20
 
 Světlo se teď počítá, ne kreslí z obrázku. Záře kolem každého tělesa vzniká

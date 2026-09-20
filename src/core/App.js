@@ -63,7 +63,9 @@ export class App {
     this.controls.target.set(...cameraTarget);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
+    this.controls.screenSpacePanning = true;
     this.controls.enablePan = false;
+    this.cameraMode = 'centered';
 
     // nekonečný zoom: OrbitControls přibližuje násobením, takže bez limitů
     // jde plynule od milimetrů po kilometry
@@ -140,6 +142,21 @@ export class App {
             ),
           );
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * 'centered'  – kamera krouží kolem pevného středu, posouvat nejde
+   * 'detached'  – střed otáčení se dá posunout, kamera je volná
+   */
+  setCameraMode(mode) {
+    this.cameraMode = mode;
+    this.controls.enablePan = mode === 'detached';
+
+    // návrat na střed: odpojená kamera mohla odjet kamkoliv
+    if (mode === 'centered') {
+      this.controls.target.copy(this._home.target);
+      this.controls.update();
+    }
   }
 
   resetView() {

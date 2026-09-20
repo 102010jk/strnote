@@ -2,17 +2,19 @@ import * as THREE from 'three';
 
 const MAX_ORBS = 100000;
 
-export const ORBIT_MODES = { SPHERE: 0, DISC: 1, HIERARCHY: 2 };
+export const ORBIT_MODES = { SPHERE: 0, DISC: 1, HIERARCHY: 2, PLANETS: 3 };
 export const GLOW_MODES = { SOFT: 0, PHYSICAL: 1, STAR: 2 };
 
+const PLANET_SCALE = [0.22, 0.55]; // planeta je zlomek velikosti hvězdy
+const PLANET_GREY = [0.24, 0.46];
+
 /**
- * Roj hvězd obíhajících střed.
+ * Roj hvězd obíhajících střed scény.
  *
- * Instance nesou jen pozici (vec3), velikost jde do shaderu jako uniform –
- * proti plné matici to je 3 floaty místo 16 a při 100 000 tělesech to je rozdíl
- * mezi 1,2 MB a 6,4 MB nahrávaných na GPU každý snímek.
- *
- * Záře se počítá ve fragment shaderu, ne z textury. Podrobnosti v docs/instancing.md.
+ * Instance nesou pozici (vec3), barvu (vec3) a měřítko (float). Pozice se
+ * přepisuje každý snímek, barva a měřítko jen při změně nastavení.
+ * Záře se počítá ve fragment shaderu, ne z textury.
+ * Podrobnosti v docs/instancing.md.
  */
 export class MainScene {
   constructor(app) {
@@ -23,8 +25,11 @@ export class MainScene {
       orbitMode: ORBIT_MODES.SPHERE,
       orbit: 14,
       orbitSpeed: 0.6,
+      camera: 'centered',
       glowMode: GLOW_MODES.STAR,
-      color: '#ffd7a3',
+      colorA: '#ffd7a3',
+      colorB: '#6aa9ff',
+      colorSpread: 0.08,
       core: 1.8,
       size: 0.85,
       power: 220,
@@ -44,8 +49,9 @@ export class MainScene {
     this._orbitTime = 0;
     this._detail = null;
 
-    this._color = new THREE.Color();
     this._offsets = new Float32Array(MAX_ORBS * 3);
+    this._tints = new Float32Array(MAX_ORBS * 3);
+    this._sizes = new Float32Array(MAX_ORBS);
     this._px = new Float32Array(MAX_ORBS);
     this._py = new Float32Array(MAX_ORBS);
     this._pz = new Float32Array(MAX_ORBS);
@@ -74,12 +80,15 @@ export class MainScene {
     this._angularSpeed = new Float32Array(MAX_ORBS);
     this._phase = new Float32Array(MAX_ORBS);
     this._parent = new Int32Array(MAX_ORBS);
+    this._isPlanet = new Uint8Array(MAX_ORBS);
   }
 
   /**
-   * Dráhy se počítají jednou pro celou kapacitu. Každé těleso má rovinu oběhu
-   * (dvojice kolmých vektorů u, v), poloměr, fázi a rodiče, kolem kterého obíhá
-   * (-1 = střed scény). Za běhu pak stačí u*cos(a) + v*sin(a) plus pozice rodiče.
+   * Dráhy se spočítají jednou pro celou kapacitu. Každé těleso má rovinu oběhu
+   * (dvojici kolmých vektorů u, v), poloměr, fázi a rodiče, kolem kterého obíhá
+   * (-1 = střed scény). Za běhu pak stačí rodič + u*cos(a) + v*sin(a).
+   *
+   * Uprostřed scény samotné nic nestojí – všechna tělesa mají nenulový poloměr.
    */
   _buildOrbits(mode) {
     const random = mulberry32(0x5f37);
@@ -87,7 +96,15 @@ export class MainScene {
 
     const u = new THREE.Vector3();
     const v = new THREE.Vector3();
-    const axis = new THREE.Vector3();
+
+    this._isPlanet.fill(0);
+    this._sizes.fill(1);
+
+    if (mode === ORBIT_MODES.PLANETS) {
+      this._buildPlanetSystems(random, u, v);
+      if (this._sizeAttribute) this._sizeAttribute.needsUpdate = true;
+      return;
+    }
 
     const depth = new Uint8Array(MAX_ORBS);
     const roots = Math.max(1, Math.round(MAX_ORBS * 0.004));
@@ -97,64 +114,125 @@ export class MainScene {
       let parent = -1;
 
       if (mode === ORBIT_MODES.DISC) {
-        // všechno v jedné rovině – klasická soustava při pohledu z boku
+        // všechno v jedné rovině – soustava při pohledu z boku
         const theta = golden * i;
         u.set(Math.cos(theta), 0, Math.sin(theta));
         v.set(-Math.sin(theta), 0, Math.cos(theta));
         radius = Math.sqrt((i + 0.5) / MAX_ORBS);
       } else if (mode === ORBIT_MODES.HIERARCHY) {
-        // hvězdy → planety → měsíce: každé těleso obíhá nějaké dřívější
-        randomDirection(u, random);
-        axis.set(0, 1, 0);
-        if (Math.abs(u.y) > 0.95) axis.set(1, 0, 0);
-        v.crossVectors(u, axis).normalize();
+        // každé těleso obíhá nějaké dřívější
+        randomPlane(u, v, random);
 
         if (i < roots) {
           radius = Math.cbrt((i + 0.5) / roots);
         } else {
-          // druhá mocnina posouvá volbu k nižším indexům = k větším tělesům
+          // druhá mocnina posouvá volbu k nižším indexům, tedy dovnitř
           parent = Math.min(i - 1, Math.floor(random() * random() * i));
           depth[i] = Math.min(depth[parent] + 1, 6);
           radius = 0.07 * Math.pow(0.45, depth[i] - 1) * (0.5 + random());
         }
       } else {
-        // koule: rovnoměrné rozmístění směrů Fibonacciho spirálou
+        // koule: směry Fibonacciho spirálou, poloměr přes třetí odmocninu
         const y = 1 - (i / (MAX_ORBS - 1)) * 2;
         const ring = Math.sqrt(Math.max(1 - y * y, 0));
         const theta = golden * i;
         u.set(Math.cos(theta) * ring, y, Math.sin(theta) * ring).normalize();
-
-        axis.set(0, 1, 0);
-        if (Math.abs(u.y) > 0.95) axis.set(1, 0, 0);
-        v.crossVectors(u, axis).normalize();
-
-        radius = i === 0 ? 0 : Math.cbrt((i + 0.5) / MAX_ORBS);
+        perpendicular(u, v);
+        radius = Math.cbrt((i + 0.5) / MAX_ORBS);
       }
 
-      this._ux[i] = u.x;
-      this._uy[i] = u.y;
-      this._uz[i] = u.z;
-      this._vx[i] = v.x;
-      this._vy[i] = v.y;
-      this._vz[i] = v.z;
-      this._radius[i] = radius;
-      this._parent[i] = parent;
-      this._angularSpeed[i] = Math.min(1 / Math.sqrt(Math.max(radius, 0.02)), 14);
-      this._phase[i] = (i * 2.39996) % (Math.PI * 2);
+      this._write(i, u, v, radius, parent);
     }
+
+    if (this._sizeAttribute) this._sizeAttribute.needsUpdate = true;
+  }
+
+  /** Hvězda a k ní 0 až 9 planet, které obíhají ji. */
+  _buildPlanetSystems(random, u, v) {
+    let i = 0;
+
+    while (i < MAX_ORBS) {
+      const star = i++;
+
+      randomPlane(u, v, random);
+      this._write(star, u, v, Math.cbrt(random()), -1);
+      this._sizes[star] = 1;
+
+      const planets = Math.min(Math.floor(random() * 10), MAX_ORBS - i);
+
+      for (let k = 0; k < planets; k++) {
+        const index = i++;
+
+        randomPlane(u, v, random);
+        this._write(index, u, v, 0.012 + random() * 0.05, star);
+
+        this._isPlanet[index] = 1;
+        this._sizes[index] = PLANET_SCALE[0] + random() * (PLANET_SCALE[1] - PLANET_SCALE[0]);
+      }
+    }
+  }
+
+  _write(index, u, v, radius, parent) {
+    this._ux[index] = u.x;
+    this._uy[index] = u.y;
+    this._uz[index] = u.z;
+    this._vx[index] = v.x;
+    this._vy[index] = v.y;
+    this._vz[index] = v.z;
+    this._radius[index] = radius;
+    this._parent[index] = parent;
+    this._angularSpeed[index] = Math.min(1 / Math.sqrt(Math.max(radius, 0.02)), 14);
+    this._phase[index] = (index * 2.39996) % (Math.PI * 2);
+  }
+
+  /**
+   * Barvy se berou z úsečky mezi dvěma zvolenými odstíny a každé těleso dostane
+   * ještě malé náhodné okolí kolem toho bodu – roj tak není jednobarevný.
+   * Planety jsou šedé, samy nesvítí.
+   */
+  _buildColors() {
+    const from = new THREE.Color(this.params.colorA);
+    const to = new THREE.Color(this.params.colorB);
+    const spread = this.params.colorSpread;
+
+    const random = mulberry32(0x9e1f);
+    const color = new THREE.Color();
+    const tints = this._tints;
+
+    for (let i = 0; i < MAX_ORBS; i++) {
+      const o = i * 3;
+
+      if (this._isPlanet[i]) {
+        const grey = PLANET_GREY[0] + random() * (PLANET_GREY[1] - PLANET_GREY[0]);
+        tints[o] = grey;
+        tints[o + 1] = grey;
+        tints[o + 2] = grey * 1.03; // sotva znatelný nádech do modra
+        continue;
+      }
+
+      color.copy(from).lerp(to, random());
+
+      tints[o] = clamp01(color.r + (random() * 2 - 1) * spread);
+      tints[o + 1] = clamp01(color.g + (random() * 2 - 1) * spread);
+      tints[o + 2] = clamp01(color.b + (random() * 2 - 1) * spread);
+    }
+
+    if (this._tintAttribute) this._tintAttribute.needsUpdate = true;
   }
 
   _buildSwarm() {
     this._offsetAttribute = new THREE.InstancedBufferAttribute(this._offsets, 3);
     this._offsetAttribute.setUsage(THREE.DynamicDrawUsage);
+    this._tintAttribute = new THREE.InstancedBufferAttribute(this._tints, 3);
+    this._sizeAttribute = new THREE.InstancedBufferAttribute(this._sizes, 1);
 
     this._coreUniforms = {
       uScale: { value: 1 },
-      uColor: { value: new THREE.Color(1, 1, 1) },
+      uBrightness: { value: 1 },
     };
     this._haloUniforms = {
       uScale: { value: 1 },
-      uColor: { value: new THREE.Color(1, 1, 1) },
+      uBrightness: { value: 1 },
       uMode: { value: this.params.glowMode },
       uPixelHeight: { value: 1080 },
     };
@@ -190,18 +268,20 @@ export class MainScene {
     this.halos.renderOrder = 1;
     this.group.add(this.halos);
 
-    // Jedno skutečné světlo na střed. Sto tisíc bodových světel WebGL neutáhne,
-    // záře těles je proto vizuální efekt, ne zdroj osvětlení.
+    // Jedno skutečné světlo, aby měla podlaha čím svítit. Sto tisíc bodových
+    // světel WebGL neutáhne, záře těles je vizuální efekt, ne zdroj osvětlení.
     this.light = new THREE.PointLight(0xffffff, 1, 10, 2);
     this.group.add(this.light);
   }
 
-  /** Udělá z běžné geometrie instancovanou se sdíleným atributem pozic. */
+  /** Udělá z běžné geometrie instancovanou se sdílenými atributy. */
   _instanced(source) {
     const geometry = new THREE.InstancedBufferGeometry();
     geometry.index = source.index;
     geometry.attributes = source.attributes;
     geometry.setAttribute('aOffset', this._offsetAttribute);
+    geometry.setAttribute('aTint', this._tintAttribute);
+    geometry.setAttribute('aSize', this._sizeAttribute);
     geometry.instanceCount = this.params.count;
     return geometry;
   }
@@ -257,13 +337,15 @@ export class MainScene {
         options: [
           { value: ORBIT_MODES.SPHERE, label: 'Koule' },
           { value: ORBIT_MODES.DISC, label: 'Disk (jedna rovina)' },
-          { value: ORBIT_MODES.HIERARCHY, label: 'Hierarchie (jedno kolem druhého)' },
+          { value: ORBIT_MODES.HIERARCHY, label: 'Hierarchie' },
+          { value: ORBIT_MODES.PLANETS, label: 'Planety (0–9 na hvězdu)' },
         ],
         get: () => p.orbitMode,
         set: (v) => {
           if (v === p.orbitMode) return;
           p.orbitMode = v;
           this._buildOrbits(v);
+          this._buildColors(); // planety jsou šedé, hvězdy barevné
         },
       },
       {
@@ -277,6 +359,15 @@ export class MainScene {
         set: (v) => { p.orbitSpeed = v; },
       },
       {
+        id: 'camera', label: 'Kamera', type: 'select', raw: true,
+        options: [
+          { value: 'centered', label: 'Na střed' },
+          { value: 'detached', label: 'Odpojená (posuv myší)' },
+        ],
+        get: () => p.camera,
+        set: (v) => { p.camera = v; this.app.setCameraMode(v); },
+      },
+      {
         id: 'glowMode', label: 'Režim záře', type: 'select',
         options: [
           { value: GLOW_MODES.SOFT, label: 'Měkká' },
@@ -287,14 +378,24 @@ export class MainScene {
         set: (v) => { p.glowMode = v; this._haloUniforms.uMode.value = v; },
       },
       {
-        id: 'color', label: 'Barva', type: 'color',
-        get: () => p.color,
-        set: (v) => { p.color = v; this.applyColor(); },
+        id: 'colorA', label: 'Barva od', type: 'color',
+        get: () => p.colorA,
+        set: (v) => { p.colorA = v; this._buildColors(); this.applyBrightness(); },
+      },
+      {
+        id: 'colorB', label: 'Barva do', type: 'color',
+        get: () => p.colorB,
+        set: (v) => { p.colorB = v; this._buildColors(); },
+      },
+      {
+        id: 'colorSpread', label: 'Rozptyl barev', min: 0, max: 0.4, step: 0.005,
+        get: () => p.colorSpread,
+        set: (v) => { p.colorSpread = v; this._buildColors(); },
       },
       {
         id: 'core', label: 'Jas jádra', min: 0.2, max: 8, step: 0.05,
         get: () => p.core,
-        set: (v) => { p.core = v; this.applyColor(); },
+        set: (v) => { p.core = v; this.applyBrightness(); },
       },
       {
         id: 'size', label: 'Velikost', min: 0.005, max: 3, step: 0.005,
@@ -344,18 +445,18 @@ export class MainScene {
     ];
   }
 
-  applyColor() {
-    const { color, core } = this.params;
-    this._color.set(color);
+  applyBrightness() {
+    const { core, colorA } = this.params;
 
-    this._coreUniforms.uColor.value.copy(this._color).multiplyScalar(core);
-    this._haloUniforms.uColor.value.copy(this._color).multiplyScalar(core * 0.4);
-    this.light.color.set(color);
+    this._coreUniforms.uBrightness.value = core;
+    this._haloUniforms.uBrightness.value = core * 0.4;
+    this.light.color.set(colorA);
   }
 
   applyAll() {
     for (const control of this.controls) control.set(control.get());
-    this.applyColor();
+    this._buildColors();
+    this.applyBrightness();
   }
 
   update(delta, _elapsed) {
@@ -427,11 +528,25 @@ export class MainScene {
   }
 }
 
-function randomDirection(target, random) {
+function clamp01(value) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+/** Libovolný vektor kolmý na u. */
+function perpendicular(u, target) {
+  if (Math.abs(u.y) > 0.95) target.set(1, 0, 0);
+  else target.set(0, 1, 0);
+
+  target.crossVectors(u, target).normalize();
+}
+
+function randomPlane(u, v, random) {
   const z = random() * 2 - 1;
   const theta = random() * Math.PI * 2;
   const ring = Math.sqrt(Math.max(1 - z * z, 0));
-  target.set(Math.cos(theta) * ring, z, Math.sin(theta) * ring).normalize();
+
+  u.set(Math.cos(theta) * ring, z, Math.sin(theta) * ring).normalize();
+  perpendicular(u, v);
 }
 
 /** Deterministický generátor – stejný roj po každém načtení. */
@@ -448,28 +563,36 @@ function mulberry32(seed) {
 
 const CORE_VERTEX = `
 attribute vec3 aOffset;
+attribute vec3 aTint;
+attribute float aSize;
 uniform float uScale;
+varying vec3 vTint;
 
 void main() {
-  vec3 world = position * uScale + aOffset;
+  vTint = aTint;
+  vec3 world = position * (uScale * aSize) + aOffset;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
 }
 `;
 
 const CORE_FRAGMENT = `
-uniform vec3 uColor;
+uniform float uBrightness;
+varying vec3 vTint;
 
 void main() {
-  gl_FragColor = vec4(uColor, 1.0);
+  gl_FragColor = vec4(vTint * uBrightness, 1.0);
 }
 `;
 
 // Placka otočená k obrazovce – billboard se dělá tady, ne na procesoru.
 const HALO_VERTEX = `
 attribute vec3 aOffset;
+attribute vec3 aTint;
+attribute float aSize;
 uniform float uScale;
 uniform float uPixelHeight;
 varying vec2 vLocal;
+varying vec3 vTint;
 varying float vDim;
 
 // Pod určitou velikost se hvězda zmenšit nesmí – rasterizér by ji podle pohybu
@@ -480,30 +603,32 @@ varying float vDim;
 // Hodnota platí pro celou placku, ne pro jasné jádro – to je zhruba její šestina.
 // Naměřené kolísání jasu při podpixelových pohybech kamery (60 000 těles):
 // 2 px → 0,68 %, 5 px → 0,05 %, 10 px → 0,04 %, 16 px → 0,01 %.
-// Vyšší hodnoty už jen zbytečně rozmazávají a ubírají jas.
 const float MIN_PIXELS = 10.0;
 
 void main() {
   vLocal = position.xy;
+  vTint = aTint;
 
+  float scale = uScale * aSize;
   vec4 viewPosition = modelViewMatrix * vec4(aOffset, 1.0);
   float depth = max(-viewPosition.z, 1e-6);
-  float pixels = uScale * projectionMatrix[1][1] / depth * uPixelHeight * 0.5;
+  float pixels = scale * projectionMatrix[1][1] / depth * uPixelHeight * 0.5;
 
   float boost = max(MIN_PIXELS / max(pixels, 1e-6), 1.0);
   vDim = 1.0 / (boost * boost);
 
-  viewPosition.xy += position.xy * uScale * boost;
+  viewPosition.xy += position.xy * scale * boost;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
 
 // Záře se počítá pro každý pixel. Žádná textura, takže se nerozmaže
-// ani při maximálním přiblížení a nemá to okraje jako obrázek.
+// ani při maximálním přiblížení a nemá okraje jako obrázek.
 const HALO_FRAGMENT = `
-uniform vec3 uColor;
+uniform float uBrightness;
 uniform int uMode;
 varying vec2 vLocal;
+varying vec3 vTint;
 varying float vDim;
 
 void main() {
@@ -531,6 +656,6 @@ void main() {
   intensity = max(intensity, 0.0) * fade;
   intensity += smoothstep(0.022, 0.0, r) * 2.0; // jádro
 
-  gl_FragColor = vec4(uColor * intensity * vDim, 1.0);
+  gl_FragColor = vec4(vTint * uBrightness * intensity * vDim, 1.0);
 }
 `;

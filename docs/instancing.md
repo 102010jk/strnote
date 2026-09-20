@@ -11,31 +11,38 @@ Celý roj jsou **dva** instancované meshe:
 - `cores` – koule, tvrdé jádro tělesa
 - `halos` – placka natočená k obrazovce, na ní se počítá záře
 
-Naměřeno (desktop, 1622×914, disk, kamera nad rovinou):
+Naměřeno (desktop, 1622×914, celý roj v záběru), 100 000 těles ve všech režimech:
 
-| Počet těles | ms/snímek | fps | draw cally |
+| Typ oběhu | ms/snímek | fps | draw cally |
 |---|---|---|---|
-| 10 000 | 0,89 | 1119 | 16 |
-| 50 000 | 3,25 | 308 | 16 |
-| 100 000 | 5,98 | 167 | 16 |
+| Koule | 7,33 | 136 | 16 |
+| Disk | 7,46 | 134 | 16 |
+| Hierarchie | 8,06 | 124 | 16 |
+| Planety | 8,14 | 123 | 16 |
+
+Hierarchie a planety jsou o něco pomalejší kvůli čtení pozice rodiče – skáče se
+po paměti a procesoru to kazí cache.
 
 Draw cally jsou roj (2) + podlaha + průchody bloomu. **S počtem těles nerostou.**
-Při 60 fps je rozpočet 16,6 ms na snímek, takže 100 000 těles zabere zhruba třetinu.
+Při 60 fps je rozpočet 16,6 ms na snímek, takže 100 000 těles zabere zhruba půlku.
 
-Oddálení výkon nemění: 100 000 těles ze vzdálenosti 6 000 jednotek běží na 6,19 ms.
+Oddálení výkon nemění – ze vzdálenosti 6 000 jednotek je to stejné.
 
-## Instance nesou jen pozici
+## Instance nesou jen to, co potřebují
 
 `THREE.InstancedMesh` posílá na každou instanci celou matici 4×4, tedy 16 floatů.
-Tady stačí pozice, protože měřítko je pro všechna tělesa stejné a jde do shaderu
-jako uniform. Proto se místo `InstancedMesh` používá `InstancedBufferGeometry`
-s vlastním atributem `aOffset` (vec3).
+Tady stačí tři atributy, proto se místo něj používá `InstancedBufferGeometry`:
 
-Rozdíl při 100 000 tělesech: **1,2 MB místo 6,4 MB** nahrávaných na GPU každý
-snímek. Oba meshe navíc sdílejí tentýž atribut, takže se počítá i nahrává jednou.
+| Atribut | Co nese | Kdy se přepisuje |
+|---|---|---|
+| `aOffset` (vec3) | poloha | každý snímek |
+| `aTint` (vec3) | barva | při změně nastavení |
+| `aSize` (float) | měřítko vůči hvězdě | při změně typu oběhu |
 
-Nahrává se jen část, která se opravdu kreslí (`addUpdateRange`), takže při
-jednom tělese neputuje na GPU buffer pro sto tisíc.
+Každý snímek tak putuje na GPU jen `aOffset`: při 100 000 tělesech **1,2 MB
+místo 6,4 MB**. Oba meshe sdílejí tytéž atributy, takže se počítají i nahrávají
+jednou. Nahrává se navíc jen část, která se opravdu kreslí (`addUpdateRange`),
+takže při jednom tělese neputuje na GPU buffer pro sto tisíc.
 
 ## Detail geometrie klesá s počtem
 
@@ -107,14 +114,21 @@ k tomu poloměr, fázi, úhlovou rychlost a **rodiče**, kolem kterého obíhá
 
 - **Koule** – směry rozmístěné Fibonacciho spirálou, poloměr přes třetí odmocninu
   indexu, takže se koule plní rovnoměrně v objemu, ne jen po povrchu.
-  Těleso s indexem 0 má poloměr 0, proto při „Počet = 1" sedí přesně uprostřed.
 - **Disk** – `u` i `v` leží v rovině y = 0, poloměr přes druhou odmocninu
   (rovnoměrné plnění plochy). Všechno obíhá v jedné rovině.
+- **Planety** – hvězda dostane 0 až 9 planet, které obíhají ji. Hvězdy jsou
+  barevné a plné velikosti, planety šedé a zmenšené na 0,22–0,55 (`aSize`).
+  Planet vychází zhruba 82 % všech těles, takže při 100 000 je hvězd asi 18 000.
+  Planeta samozřejmě sama nesvítí – že je tmavá, zařídí její šedá barva,
+  protože záře se počítá z téhož odstínu.
 - **Hierarchie** – první čtyři promile těles jsou „hvězdy" obíhající střed,
   zbytek si vybere jako rodiče nějaké dřívější těleso. Volba je vážená druhou
   mocninou náhody, takže padá spíš na nižší indexy, tedy na tělesa blíž ke středu.
   Poloměr klesá s hloubkou zanoření (0,45× na úroveň) – vznikají soustavy
   planet a měsíců.
+
+**Uprostřed scény nestojí nic.** Dřív tam bylo těleso s nulovým poloměrem;
+teď má nejmenší poloměr 0,0171 (koule), takže střed zůstává prázdný.
 
 Rodič má vždycky nižší index než potomek, takže jeden průchod polem stačí
 a nic se nemusí řadit. Rozmístění je deterministické (mulberry32 s pevným
@@ -122,6 +136,31 @@ semínkem), roj je po každém načtení stejný.
 
 Úhlová rychlost je `1/√r` s omezením nahoru – bližší tělesa obíhají rychleji,
 jako v gravitaci. Odtud ty viditelné slupky.
+
+## Barvy
+
+Barva se nebere jedna, ale jako **úsečka mezi dvěma odstíny**. Každé těleso si
+na ní vylosuje bod a k němu dostane ještě malé náhodné okolí – nezávisle
+v každém kanálu, podle posuvníku „Rozptyl barev". Roj tak není jednobarevný
+a zároveň drží zvolenou paletu.
+
+Losování je deterministické (mulberry32 s pevným semínkem), takže posunutí
+rozptylu nepřemíchá celý roj, jen rozšíří okolí kolem stejných bodů.
+
+Barvy se přepočítávají při změně obou odstínů, rozptylu i typu oběhu – planety
+musí zůstat šedé. Je to průchod přes celou kapacitu, tedy pár milisekund,
+ale děje se jen při sáhnutí na ovladač, ne každý snímek.
+
+## Kamera
+
+Dva režimy:
+
+- **Na střed** – `OrbitControls` krouží kolem pevného bodu, posouvat nejde.
+- **Odpojená** – zapne se `enablePan`, střed otáčení se dá odtáhnout myší
+  a kamera se pohybuje volně. Přepnutím zpět na střed se vrátí do výchozího bodu.
+
+Výpočet `near`/`far` pro nekonečný zoom bere odstup od středu otáčení, takže
+funguje v obou režimech stejně.
 
 ## Proč tělesa nejsou opravdová světla
 

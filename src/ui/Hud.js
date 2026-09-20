@@ -113,7 +113,12 @@ function selectInput(control) {
   }
 
   select.value = String(control.get());
-  select.addEventListener('change', () => control.set(Number(select.value)));
+
+  // `raw` = hodnota je řetězec (režim kamery), jinak číslo
+  select.addEventListener('change', () => {
+    control.set(control.raw ? select.value : Number(select.value));
+  });
+
   return select;
 }
 

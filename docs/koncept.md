@@ -16,6 +16,14 @@ specifikace, spousta věcí se ještě rozhodne.
 - Web na počítači, nativní aplikace na Androidu a iOS (Capacitor).
 - Dlouhodobý projekt, na pokračování.
 
+### Vzor ovládání: Universe Sandbox
+
+Klikneš na těleso, vysune se panel s jeho vlastnostmi a dá se v něm rovnou
+editovat. Tady bude v panelu místo hmotnosti a poloměru zápisek a poznatky.
+
+Vedlejší efekt, který se hodí: panel s ovládáním scény už takhle funguje,
+inspektor bude jeho sourozenec, ne nová vrstva.
+
 ## Otevřené otázky
 
 Tohle se musí rozhodnout dřív, než se začne stavět obsah.
@@ -36,7 +44,28 @@ Poloha se proto bude muset odvozovat z **identity zápisku** (hash ID →
 dráha), ne z pořadí. Je to malá změna v `_buildOrbits`, ale čím dřív, tím líp –
 jinak se rozsype každému všechno pokaždé, když něco smaže.
 
-### 3. Text ve 3D scéně
+### 3. Jak se vybírá těleso kliknutím
+
+Tohle je jediné místo, kde se architektura roje bude muset ohnout. Běžný
+`raycaster` tady **nefunguje**: scéna nepoužívá `InstancedMesh` (ten umí
+raycast sám), ale `InstancedBufferGeometry` s vlastním shaderem, kde polohu
+nese atribut `aOffset`. Raycaster o něm neví a testoval by jednu kouli
+v počátku.
+
+Řešení je naštěstí levné a už na něj máme data: polohy všech těles držíme
+každý snímek i na procesoru (`_px`, `_py`, `_pz`). Výběr je pak průchod polem
+a hledání nejbližšího zásahu – při 100 000 tělesech jednotky milisekund,
+a jen při kliknutí, ne každý snímek.
+
+Praktický detail: netestovat protnutí paprsku s koulí, ale **vzdálenost
+na obrazovce**. Hvězda může mít dva pixely a trefit ji paprskem je nemožné;
+promítnout tělesa do obrazovky a vzít to s nejmenší vzdáleností od kurzoru
+(při shodě to bližší) se chová tak, jak člověk čeká.
+
+Druhá cesta je GPU picking (vykreslit ID do textury a přečíst pixel), ale ta
+je pracnější a zdržuje čtením z GPU. Nemá smysl, dokud první stačí.
+
+### 4. Text ve 3D scéně
 
 Do WebGL se text pořádně kreslit nedá a psát se v něm nedá vůbec. Obvyklé
 a správné řešení je nechat galaxii ve WebGL a text i editaci udělat jako
@@ -46,6 +75,21 @@ na mobilu po přístupnost.
 Drobnost, na kterou se narazí hned: `styles/main.css` má kvůli chování jako
 aplikace vypnutý výběr textu na `body`. Pro text zápisků bude potřeba výjimka,
 stejná, jaká už existuje pro `input` a `textarea`.
+
+## Kdyby to mělo být na prodej
+
+Autor to staví hlavně pro sebe, ale počítá s tím, že by to šlo prodávat.
+Co z toho plyne pro rozhodování:
+
+- **Odlišnost je prostorová paměť**, ne grafika. Lidé si pamatují, *kde* něco
+  je. Galaxie jako paměťový palác je použitelný nápad; efektní vykreslení
+  samo o sobě nikdo nekoupí.
+- **Rozhodují nudné části.** Zápisníky nepadají na vzhledu, ale na
+  synchronizaci, spolehlivosti, exportu, mobilní klávesnici a rychlosti
+  hledání. „Jednoduchý režim" z toho zadání je obchodně ta důležitější půlka.
+- **Deník je citlivá data.** Když to má mít uživatele, je vlastnictví dat,
+  export a případně šifrování argument pro prodej, ne otrava navíc.
+  Souvisí to přímo s otázkou 1 – kam se ukládá.
 
 ## Co z dosavadní práce zůstává
 

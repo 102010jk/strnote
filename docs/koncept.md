@@ -115,8 +115,31 @@ počítání mezikroků a nic se nikdy nerozjede numerickou chybou. Cena je ře�
 Keplerovy rovnice (pár Newtonových iterací na těleso a snímek), což je při
 tisícovce nic.
 
-Případné vzájemné rušení mezi tělesy jde přidat navrch jako malá odchylka
-s tvrdým stropem – tedy to „s ohraničením" doslova.
+#### Proč se planeta nesmí přestěhovat k jiné hvězdě
+
+To je hlavní důvod pro ohraničení a v N-body simulaci tisíce hvězd by se to
+opravdu dělo. Planeta drží u své hvězdy jen uvnitř Hillovy sféry; při těsném
+průletu jiné hvězdy se ukradne. Za dost dlouhou dobu to potká skoro každého.
+
+Klíčové ale je, **že to není fyzikální problém, ale problém integrity dat.**
+Vazba planety na hvězdu není výsledek simulace – je to struktura zápisníku,
+tedy „tenhle zápisek patří pod tohle téma". Kdyby ji směl přepsat výpočet
+drah, znamenalo by to, že se poznámka sama přesune pod jiné téma. To se
+nesmí stát nikdy, ani omylem, ani po roce běhu.
+
+U Keplerových drah navázaných na rodiče je to **nemožné z principu**, ne
+ohlídané kontrolou: poloha tělesa je definovaná vůči jeho rodiči a od jiných
+hvězd na něj nepůsobí vůbec nic. Žádný strop se nemusí hlídat, protože není
+co překročit. Rodič je datové pole, které vlastní zápisník, ne fyzika.
+
+Kdyby se později přidalo rušení kvůli živějšímu pohybu, platí dvě pravidla:
+odchylka zůstane pod zlomkem Hillovy sféry a **nikdy nesmí sáhnout na
+ukazatel na rodiče**.
+
+Zbývá jeden případ, kdy to může rušit i tak: když se dvě hvězdy při svém
+oběhu dostanou blízko k sobě, jejich soustavy se vizuálně prolnou, i když
+vlastnictví zůstane v pořádku. To se ale řeší při rozmisťování – minimálním
+odstupem hvězd – ne fyzikou.
 
 ### 5. Text ve 3D scéně
 

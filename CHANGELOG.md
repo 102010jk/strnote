@@ -5,7 +5,8 @@
 Web se dá nainstalovat na plochu jako aplikace – má vlastní ikonu, spouští se
 na celou obrazovku bez adresního řádku a po prvním načtení funguje i offline.
 Na dotykovém displeji se chová jako appka, ne jako stránka: nic se neoznačuje
-a nevyskakuje menu po přidržení prstu.
+a nevyskakuje menu po přidržení prstu. Offline režim naskočí od druhého otevření –
+napoprvé se stihne uložit jen část.
 
 Pod povrchem je připravená cesta do Google Play a App Store přes Capacitor.
 Zatím se nic neinstaluje, jen je všechno nachystané – podrobnosti

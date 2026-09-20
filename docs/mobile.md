@@ -95,3 +95,9 @@ Podepisování (certifikáty, provisioning profily) se řeší až s Apple účt
   na 2; bloom je na mobilu to nejdražší, počítat s tím, že půjde dolů.
 - **Service worker** – v Capacitoru se záměrně neregistruje (`src/core/pwa.js`),
   soubory jsou tam lokálně už tak a cache by jen překážela při updatu.
+- **Offline až od druhé návštěvy** – při úplně prvním otevření se service worker
+  teprve instaluje a stránku ještě neřídí, takže three.js z CDN mu proteče mimo
+  cache. Od druhého načtení je uložené všechno (ověřeno: 24 položek, z toho
+  12 modulů three.js). Precachovat CDN moduly hned při instalaci by znamenalo
+  natvrdo vypsat i tranzitivní závislosti addonů – křehké, nestojí to za to.
+  V nativní appce tohle odpadá, tam je `vendor/` součástí balíku.

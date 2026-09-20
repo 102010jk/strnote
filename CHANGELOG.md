@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 – 2026-09-20
+
+Oprava: po nasazení nové verze se napoprvé pořád ukazovala ta stará a nová
+naskočila až při druhém otevření. Offline režim funguje dál stejně.
+
 ## 1.2.0 – 2026-09-20
 
 Koule už není jedna. Slider „Počet koulí" jde od 1 do 10 000 a všechny obíhají

@@ -1,6 +1,6 @@
 // Service worker: web funguje i offline a po instalaci na plochu startuje okamžitě.
 // V nativním obalu (Capacitor) se neregistruje – tam jsou soubory lokálně už tak.
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const CACHE = `strnote-${VERSION}`;
 const CDN = 'https://cdn.jsdelivr.net/';
 
@@ -40,22 +40,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  // Otevření stránky: vždy zkus síť, ať je nasazená verze vidět hned.
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          cachePut(request, response.clone());
-          return response;
-        })
-        .catch(() => caches.match('./index.html').then((hit) => hit ?? caches.match('./'))),
-    );
-    return;
-  }
-
-  const url = new URL(request.url);
-
-  // three.js z CDN je připnutá na verzi, takže se nemění – ber z cache.
+  // three.js z CDN je připnutá na verzi, takže se nikdy nemění – ber z cache.
   if (request.url.startsWith(CDN)) {
     event.respondWith(
       caches.match(request).then(
@@ -70,20 +55,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.origin !== self.location.origin) return;
+  if (new URL(request.url).origin !== self.location.origin) return;
 
-  // Vlastní soubory: ukaž cache hned, na pozadí stáhni novou verzi.
+  // Vlastní soubory: vždycky nejdřív síť, cache je záloha pro offline.
+  // Stale-while-revalidate by bylo rychlejší, ale ukázalo by čerstvě nasazenou
+  // verzi až na druhé načtení – to jde proti „commitni a je to nasazené".
   event.respondWith(
-    caches.match(request).then((hit) => {
-      const network = fetch(request)
-        .then((response) => {
-          cachePut(request, response.clone());
-          return response;
-        })
-        .catch(() => hit);
-
-      return hit ?? network;
-    }),
+    fetch(request)
+      .then((response) => {
+        cachePut(request, response.clone());
+        return response;
+      })
+      .catch(() =>
+        caches
+          .match(request)
+          .then((hit) => hit ?? (request.mode === 'navigate' ? caches.match('./index.html') : undefined)),
+      ),
   );
 });
 

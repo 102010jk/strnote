@@ -1,6 +1,6 @@
 {
   "name": "strnote",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "Světelná koule v three.js, servírovaná staticky z GitHub Pages bez build kroku.",

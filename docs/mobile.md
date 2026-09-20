@@ -101,3 +101,7 @@ Podepisování (certifikáty, provisioning profily) se řeší až s Apple účt
   12 modulů three.js). Precachovat CDN moduly hned při instalaci by znamenalo
   natvrdo vypsat i tranzitivní závislosti addonů – křehké, nestojí to za to.
   V nativní appce tohle odpadá, tam je `vendor/` součástí balíku.
+- **Vlastní soubory jdou network-first** (od 1.2.1), cache je jen záloha pro
+  offline. Stale-while-revalidate by bylo rychlejší, ale nasazená verze by se
+  objevila až na druhé načtení. three.js z CDN je naopak cache-first – URL má
+  v sobě verzi, takže se obsah nikdy nemění.

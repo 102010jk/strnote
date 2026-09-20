@@ -24,6 +24,33 @@ editovat. Tady bude v panelu místo hmotnosti a poloměru zápisek a poznatky.
 Vedlejší efekt, který se hodí: panel s ovládáním scény už takhle funguje,
 inspektor bude jeho sourozenec, ne nová vrstva.
 
+### Vzhled těles
+
+Hvězdy i planety mají mít různé podoby, ne jednu.
+
+Důležité je, odkud ta různost poteče: **ze shaderu, ne z geometrie.** Kdyby
+mělo každé těleso vlastní model, rozpadne se kreslení na jedno volání a s ním
+celá rezerva. Koule může zůstat jedna pro všechny a lišit se:
+
+- **parametry na instanci** – barva a velikost už existují (`aTint`, `aSize`),
+  přibude semínko a typ tělesa
+- **procedurálním povrchem** ve fragment shaderu z toho semínka – pásy
+  plynného obra, kontinenty, krátery. Žádné textury ke stahování, nekonečně
+  variant, pořád jedno kreslení.
+- **typem záře** u hvězd – teplota barvy, koróna, síla paprsků, tep
+
+Při tisícovce těles je na tohle rozpočet víc než dost (scéna teď jede na 1 %).
+
+### Souhvězdí
+
+Zatím jen pojmenované: zápisky se sdružují do souhvězdí. Kreslení spojnic je
+levné (`LineSegments`, jedno volání).
+
+Háček je jinde a zasahuje do otázky 2: členové souhvězdí musí být **blízko
+u sebe**, jinak to nejsou souhvězdí. Poloha se tedy nemůže odvodit jen
+z identity zápisku – musí vycházet z „kam patří" a teprve uvnitř toho
+z identity. Rozmyslet dřív, než se poloha z identity začne stavět.
+
 ## Otevřené otázky
 
 Tohle se musí rozhodnout dřív, než se začne stavět obsah.
@@ -65,7 +92,33 @@ promítnout tělesa do obrazovky a vzít to s nejmenší vzdáleností od kurzor
 Druhá cesta je GPU picking (vykreslit ID do textury a přečíst pixel), ale ta
 je pracnější a zdržuje čtením z GPU. Nemá smysl, dokud první stačí.
 
-### 4. Text ve 3D scéně
+### 4. Fyzikální dráhy, až na ně dojde
+
+Do budoucna se dráhy nemají počítat geometricky, ale fyzikálně, s ohraničením.
+Stojí za to rozlišit dvě věci, které se pod „fyzikálně" schovávají:
+
+**Plná N-body simulace** (každé těleso přitahuje každé jiné) je při tisícovce
+těles výpočetně zvládnutelná, ale pro zápisník je to špatně – a ne kvůli
+výkonu. Soustava se vyvíjí, tělesa se rozutečou nebo srazí a **zápisek se
+časem přestěhuje jinam**. Prostorová paměť, což je celá výhoda téhle aplikace,
+se tím rozbije. Ohraničení, o kterém mluvíš, je přesně ten instinkt.
+
+**Keplerovy dráhy** dávají fyziku bez téhle nevýhody. Každé těleso má skutečné
+dráhové prvky – velkou poloosu, výstřednost, sklon, argument pericentra –
+a obíhá svého rodiče podle gravitace jen od něj, ne od sourozenců. Dostaneš
+opravdové elipsy, správné rychlosti (u pericentra rychleji) i nakloněné roviny,
+ale soustava zůstane stabilní napořád.
+
+Navíc se tím nepřijde o vlastnost, kterou má současné řešení a která se bude
+hodit: **poloha je čistá funkce času.** Dá se skočit na libovolný okamžik bez
+počítání mezikroků a nic se nikdy nerozjede numerickou chybou. Cena je řešení
+Keplerovy rovnice (pár Newtonových iterací na těleso a snímek), což je při
+tisícovce nic.
+
+Případné vzájemné rušení mezi tělesy jde přidat navrch jako malá odchylka
+s tvrdým stropem – tedy to „s ohraničením" doslova.
+
+### 5. Text ve 3D scéně
 
 Do WebGL se text pořádně kreslit nedá a psát se v něm nedá vůbec. Obvyklé
 a správné řešení je nechat galaxii ve WebGL a text i editaci udělat jako

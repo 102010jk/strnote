@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0 – 2026-09-20
+
+Koule už není jedna. Slider „Počet koulí" jde od 1 do 10 000 a všechny obíhají
+společný střed – bližší rychleji, takže se z nich skládají viditelné slupky.
+Přibyly k tomu posuvníky na poloměr a rychlost oběhu.
+
+Zoom je bez hranic: dá se dojet až k jedné kouli nebo odjet tak daleko, že je
+z celého roje tečka. Nahoře vedle fps přibyl počet draw callů a trojúhelníků,
+ať je při zkoušení vidět, co to stojí.
+
+Deset tisíc koulí běží na 1,3 ms na snímek. Jak je to udělané:
+[docs/instancing.md](docs/instancing.md).
+
 ## 1.1.0 – 2026-09-20
 
 Web se dá nainstalovat na plochu jako aplikace – má vlastní ikonu, spouští se

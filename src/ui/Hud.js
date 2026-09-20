@@ -5,6 +5,8 @@
 export function createHud({ app, scene }) {
   const panel = document.querySelector('[data-panel]');
   const fpsEl = document.querySelector('[data-fps]');
+  const drawsEl = document.querySelector('[data-draws]');
+  const trisEl = document.querySelector('[data-tris]');
   const motionBtn = document.querySelector('[data-action="toggle-motion"]');
   const resetBtn = document.querySelector('[data-action="reset-view"]');
 
@@ -41,8 +43,18 @@ export function createHud({ app, scene }) {
     accumulator += delta;
     if (accumulator < 0.25) return;
     accumulator = 0;
+
+    const { render } = app.renderer.info;
     if (fpsEl) fpsEl.textContent = String(Math.round(app.fps));
+    if (drawsEl) drawsEl.textContent = String(render.calls);
+    if (trisEl) trisEl.textContent = formatCount(render.triangles);
   });
+}
+
+function formatCount(value) {
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${Math.round(value / 1e3)}k`;
+  return String(value);
 }
 
 function buildControl(control) {

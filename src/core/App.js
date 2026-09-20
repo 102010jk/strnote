@@ -46,11 +46,16 @@ export class App {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    // composer renderuje víc průchodů za snímek; bez tohohle by statistiky
+    // ukazovaly jen ten poslední (fullscreen quad = 1 draw)
+    this.renderer.info.autoReset = false;
+
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(background);
     if (fog) this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
     if (environment) this.scene.environment = createStudioEnvironment(this.renderer);
 
+    // near/far se přepočítávají za běhu podle vzdálenosti kamery (viz _updateClipping)
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
     this.camera.position.set(...cameraPosition);
 
@@ -59,9 +64,12 @@ export class App {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.enablePan = false;
-    this.controls.minDistance = 4;
-    this.controls.maxDistance = 30;
-    this.controls.maxPolarAngle = Math.PI * 0.495; // nedovolí podjet pod podlahu
+
+    // nekonečný zoom: OrbitControls přibližuje násobením, takže bez limitů
+    // jde plynule od milimetrů po kilometry
+    this.controls.minDistance = 1e-4;
+    this.controls.maxDistance = Infinity;
+    this.controls.zoomSpeed = 1.2;
     this.controls.update();
 
     this._home = {
@@ -164,10 +172,29 @@ export class App {
       this._fpsFrames = 0;
     }
 
+    this.renderer.info.reset();
     this.controls.update();
+    this._updateClipping();
     for (const fn of this.updaters) fn(delta, elapsed);
     this.composer.render(delta);
   };
+
+  /**
+   * Pevné near/far by nekonečný zoom neustály – zblízka by scéna mizela,
+   * zdálky by se ořízla. Roviny proto jedou s odstupem kamery od středu.
+   */
+  _updateClipping() {
+    const distance = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-4);
+
+    const near = distance * 0.002;
+    const far = Math.max(distance * 4000, 5000);
+
+    if (Math.abs(this.camera.near - near) < near * 0.1) return;
+
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
+  }
 
   dispose() {
     this.stop();

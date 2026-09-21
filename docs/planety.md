@@ -56,7 +56,30 @@ o 1,1 dál (plus trochu náhody). 1,1 je víc než průměr největší planety
 (0,55 × 2), takže se dráhy nepřekrývají. Naměřeno u hvězdy s devíti planetami:
 2,29 / 3,39 / 4,61 / 5,70 / 6,71 / 8,09 / 9,20 / 10,00 / 11,44 poloměru.
 
-Vnitřní planety obíhají rychleji (`3 / √vzdálenost`), jako ve skutečné soustavě.
+### Rychlost podle Keplera
+
+Oběžné doby jdou podle 3. Keplerova zákona, T² ∝ a³: úhlová rychlost klesá
+s mocninou **1,5** vzdálenosti. Do verze 1.6.0 tu byla odmocnina (mocnina 0,5)
+a všechno bylo moc rychlé – nejbližší planeta oběhla za ~5 s a vnější byly
+skoro stejně rychlé jako vnitřní.
+
+Konstanta je nastavená tak, aby nejbližší planeta oběhla za 30 s při
+„Rychlosti planet" 1. Naměřeno u hvězdy s devíti planetami:
+
+| Vzdálenost (poloměry hvězdy) | Oběh |
+|---|---|
+| 2,29 | 32 s |
+| 4,61 | 91 s |
+| 8,09 | 211 s |
+| 11,44 | 356 s (~6 min) |
+
+Poměr doby vnější a vnitřní planety vyšel 11,1; Kepler dává 11,2 (rozdíl je
+zaokrouhlení).
+
+Planety mají **vlastní čas a vlastní posuvník** („Rychlost planet"), nezávislý
+na oběhu hvězd kolem středu galaxie („Rychlost oběhu"). Oběh galaxie je pořád
+rychlý – hvězda urazí jednotky délky za sekundu – takže když je potřeba klid,
+je potřeba stáhnout i ten.
 
 ## Zdálky tečka, zblízka koule
 

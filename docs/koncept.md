@@ -73,6 +73,9 @@ jinak se rozsype každému všechno pokaždé, když něco smaže.
 
 ### 3. Jak se vybírá těleso kliknutím
 
+> **Hotovo v 1.7.0** přesně tímhle postupem, viz „Kliknutí na těleso"
+> v docs/instancing.md. Naměřeno 0,09 ms při 1000 tělesech, 0,69 ms při 100 000.
+
 Tohle je jediné místo, kde se architektura roje bude muset ohnout. Běžný
 `raycaster` tady **nefunguje**: scéna nepoužívá `InstancedMesh` (ten umí
 raycast sám), ale `InstancedBufferGeometry` s vlastním shaderem, kde polohu

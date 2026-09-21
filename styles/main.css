@@ -152,6 +152,18 @@ body.hud-hidden .hud {
   opacity: 0.7;
 }
 
+.focus {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
 .stats {
   display: flex;
   gap: 12px;

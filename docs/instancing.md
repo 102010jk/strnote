@@ -293,6 +293,30 @@ Dva režimy:
 Výpočet `near`/`far` pro nekonečný zoom bere odstup od středu otáčení, takže
 funguje v obou režimech stejně.
 
+### Kliknutí na těleso
+
+Kliknutí (stisk a puštění do 6 px a 400 ms – delší pohyb je otáčení kamerou)
+vybere těleso pod kurzorem, kamera k němu za 1,2 s přeletí a pak ho sleduje.
+`Esc`, „Reset" nebo přepnutí kamery na střed sledování ukončí.
+
+**Výběr** nejde přes `Raycaster` – o poloze těles ví jen shader (`aOffset`).
+`MainScene.pick()` proto promítne polohy z `_px/_py/_pz` na obrazovku: když je
+kurzor na kouli tělesa, vyhraje z takových to nejbližší kameře, jinak nejbližší
+těleso do 12 px (dvoupixelovou hvězdu by jinak nikdo netrefil). Stojí to
+0,09 ms při 1000 tělesech a 0,69 ms při 100 000 – jen při kliknutí.
+
+**Přelet** prolíná střed otáčení lineárně a odstup kamery **logaritmicky**:
+přelet z celé galaxie k planetě jde přes několik řádů a lineárně by se kamera
+přiblížila až na samém konci. Odstup na konci je 7 poloměrů u planety
+(zabere asi třetinu obrazovky) a 30 poloměrů u hvězdy (je vidět soustava).
+
+**Sledování** je čistý posun kamery i středu o tolik, o kolik se těleso
+pohnulo, takže natočení a odstup, které si člověk nastaví, zůstávají.
+Musí běžet **až po aktualizaci scény** – polohy se počítají v ní, a dřív by
+kamera sledovala polohu z minulého snímku. Ověřeno: po přeletu je planeta
+přesně uprostřed obrazovky (0 px) a drží tam i po 7 s, kdy urazila přes
+20 jednotek.
+
 ## Proč tělesa nejsou opravdová světla
 
 Každé těleso vypadá jako zdroj světla, ale svítí jen **jedno** skutečné

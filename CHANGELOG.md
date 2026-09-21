@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.0 – 2026-09-21
+
+Na hvězdu nebo planetu jde kliknout: kamera k ní přeletí, dá ji doprostřed
+a pak ji sleduje, jak obíhá. Nahoře je vidět, co se sleduje; `Esc` nebo
+„Reset" ji pustí.
+
+Planety obíhají pomaleji a jako ve skutečnosti – čím dál od hvězdy, tím
+mnohem pomaleji. Nejbližší oběhne za půl minuty, nejvzdálenější za šest.
+Mají vlastní posuvník „Rychlost planet", nezávislý na oběhu galaxie.
+
 ## 1.6.0 – 2026-09-21
 
 Planety už nejsou šedé kuličky. Každá má materiál – kámen, trávu, železo

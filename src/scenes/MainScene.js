@@ -45,6 +45,21 @@ const PLANET_SCALE = [0.22, 0.55]; // planeta je zlomek velikosti hvězdy
 const PLANET_FIRST_ORBIT = 2.2;
 const PLANET_ORBIT_STEP = 1.1;
 
+// Oběh planet podle 3. Keplerova zákona: T² ∝ a³, úhlová rychlost tedy klesá
+// s a^1,5. Nejbližší planeta (2,2 poloměru) oběhne za 30 s při „Rychlosti
+// planet" 1, nejvzdálenější (~11,5 poloměru) zhruba za 6 minut.
+const PLANET_INNER_PERIOD = 30;
+const PLANET_KEPLER = ((2 * Math.PI) / PLANET_INNER_PERIOD) * Math.pow(PLANET_FIRST_ORBIT, 1.5);
+
+// Kliknutí trefí těleso, když je kurzor na jeho kouli, nebo do téhle
+// vzdálenosti od ní – hvězdu o dvou pixelech jinak trefit nejde.
+const PICK_TOLERANCE_PX = 12;
+
+// Odstup kamery po kliknutí, v poloměrech tělesa: planeta zabere zhruba
+// třetinu výšky obrazovky, u hvězdy je vidět celá její soustava.
+const FOCUS_PLANET_RADII = 7;
+const FOCUS_STAR_RADII = 30;
+
 /**
  * Roj hvězd obíhajících střed scény, v režimu planet i s planetami kolem nich.
  *
@@ -63,6 +78,7 @@ export class MainScene {
       orbitMode: ORBIT_MODES.SPHERE,
       orbit: 14,
       orbitSpeed: 0.6,
+      planetSpeed: 1,
       camera: 'centered',
       glowMode: GLOW_MODES.STAR,
       colorA: '#ffd7a3',
@@ -88,6 +104,8 @@ export class MainScene {
     this._disposables = [];
     this._pulseTime = 0;
     this._orbitTime = 0;
+    this._planetTime = 0;
+    this._pickMatrix = new THREE.Matrix4();
     this._detailLevel = -1;
     this._capacity = 0;
 
@@ -253,8 +271,7 @@ export class MainScene {
         randomPlane(u, v, random);
         const distance = PLANET_FIRST_ORBIT + k * PLANET_ORBIT_STEP + random() * 0.5;
         this._write(index, u, v, distance, star);
-        // vnitřní planety obíhají rychleji, jako u skutečné soustavy
-        this._angularSpeed[index] = 3 / Math.sqrt(distance);
+        this._angularSpeed[index] = PLANET_KEPLER / Math.pow(distance, 1.5);
 
         this._kinds[index] = pickMaterial(materialRandom()).kind;
         this._sizes[index] = PLANET_SCALE[0] + random() * (PLANET_SCALE[1] - PLANET_SCALE[0]);
@@ -487,6 +504,8 @@ export class MainScene {
         set: (v) => {
           if (v === p.orbitMode) return;
           p.orbitMode = v;
+          // stejný index je v jiném režimu jiné těleso – sledování by skočilo
+          this.app.clearFocus();
           this._buildOrbits(v);
           this._buildColors(); // planety mají barvu podle materiálu
         },
@@ -500,6 +519,11 @@ export class MainScene {
         id: 'orbitSpeed', label: 'Rychlost oběhu', min: 0, max: 20, step: 0.01,
         get: () => p.orbitSpeed,
         set: (v) => { p.orbitSpeed = v; },
+      },
+      {
+        id: 'planetSpeed', label: 'Rychlost planet', min: 0, max: 20, step: 0.05,
+        get: () => p.planetSpeed,
+        set: (v) => { p.planetSpeed = v; },
       },
       {
         id: 'camera', label: 'Kamera', type: 'select', raw: true,
@@ -613,11 +637,13 @@ export class MainScene {
     if (p.animate) {
       this._pulseTime += delta;
       this._orbitTime += delta * p.orbitSpeed;
+      this._planetTime += delta * p.planetSpeed;
     }
 
     const beat = 1 + Math.sin(this._pulseTime * 1.6) * p.pulse * 0.22;
     const count = p.count;
     const time = this._orbitTime;
+    const planetTime = this._planetTime;
     const scale = p.size * beat;
 
     // světlo pro planety se počítá jen tam, kde nějaké planety jsou
@@ -630,9 +656,10 @@ export class MainScene {
     const pz = this._pz;
 
     for (let i = 0; i < count; i++) {
-      const angle = time * this._angularSpeed[i] + this._phase[i];
-      // planeta: vzdálenost v poloměrech hvězdy; ostatní: v poloměru galaxie
-      const radius = this._radius[i] * (this._kinds[i] > 0 ? scale : p.orbit);
+      // planeta: vlastní čas a vzdálenost v poloměrech hvězdy; ostatní v galaxii
+      const isPlanet = this._kinds[i] > 0;
+      const angle = (isPlanet ? planetTime : time) * this._angularSpeed[i] + this._phase[i];
+      const radius = this._radius[i] * (isPlanet ? scale : p.orbit);
       const c = Math.cos(angle) * radius;
       const s = Math.sin(angle) * radius;
 
@@ -677,6 +704,84 @@ export class MainScene {
     this._haloUniforms.uPixelHeight.value = pixelHeight;
 
     this.light.intensity = p.power * beat;
+  }
+
+  /**
+   * Těleso pod kurzorem, nebo -1.
+   *
+   * Běžný Raycaster tu nejde použít – o poloze těles ví jen shader (aOffset).
+   * Polohy ale držíme i na procesoru, takže stačí je promítnout na obrazovku.
+   * Kurzor na kouli tělesa vyhrává (z více koulí ta bližší), jinak nejbližší
+   * těleso do PICK_TOLERANCE_PX.
+   */
+  pick(clientX, clientY, rect) {
+    const camera = this.app.camera;
+    camera.updateMatrixWorld();
+    this.group.updateMatrixWorld();
+
+    const matrix = this._pickMatrix
+      .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(this.group.matrixWorld);
+    const e = matrix.elements;
+
+    const halfW = rect.width / 2;
+    const halfH = rect.height / 2;
+    const mouseX = clientX - rect.left - halfW;
+    const mouseY = halfH - (clientY - rect.top);
+    const toPixels = camera.projectionMatrix.elements[5] * halfH;
+
+    let hit = -1;
+    let hitDepth = Infinity;
+    let near = -1;
+    let nearDistance = PICK_TOLERANCE_PX * PICK_TOLERANCE_PX;
+
+    for (let i = 0; i < this.params.count; i++) {
+      const x = this._px[i];
+      const y = this._py[i];
+      const z = this._pz[i];
+
+      const w = e[3] * x + e[7] * y + e[11] * z + e[15];
+      if (w <= camera.near) continue; // za kamerou
+
+      const dx = ((e[0] * x + e[4] * y + e[8] * z + e[12]) / w) * halfW - mouseX;
+      const dy = ((e[1] * x + e[5] * y + e[9] * z + e[13]) / w) * halfH - mouseY;
+      const distance = dx * dx + dy * dy;
+      const radius = (this.params.size * this._sizes[i] * toPixels) / w;
+
+      if (distance <= radius * radius) {
+        if (w < hitDepth) {
+          hit = i;
+          hitDepth = w;
+        }
+      } else if (distance < nearDistance) {
+        near = i;
+        nearDistance = distance;
+      }
+    }
+
+    return hit >= 0 ? hit : near;
+  }
+
+  /** Funkce pro kameru: aktuální poloha tělesa, nebo null, když už není. */
+  bodyTracker(index) {
+    return (target) => {
+      if (index >= this.params.count) return null;
+      return target
+        .set(this._px[index], this._py[index], this._pz[index])
+        .applyMatrix4(this.group.matrixWorld);
+    };
+  }
+
+  /** Odstup kamery, ze kterého je těleso dobře vidět. */
+  focusDistance(index) {
+    const radius = this.params.size * this._sizes[index];
+    return radius * (this._kinds[index] > 0 ? FOCUS_PLANET_RADII : FOCUS_STAR_RADII);
+  }
+
+  /** Krátký popis tělesa pro štítek. */
+  describe(index) {
+    const material = MATERIAL_BY_KIND[this._kinds[index]];
+    return material ? `planeta · ${material.label}` : 'hvězda';
   }
 
   dispose() {

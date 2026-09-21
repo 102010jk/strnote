@@ -7,6 +7,7 @@ export function createHud({ app, scene }) {
   const fpsEl = document.querySelector('[data-fps]');
   const drawsEl = document.querySelector('[data-draws]');
   const trisEl = document.querySelector('[data-tris]');
+  const focusEl = document.querySelector('[data-focus]');
   const motionBtn = document.querySelector('[data-action="toggle-motion"]');
   const resetBtn = document.querySelector('[data-action="reset-view"]');
 
@@ -23,6 +24,18 @@ export function createHud({ app, scene }) {
     syncMotionLabel();
   };
 
+  // kliknutí na těleso: kamera k němu přeletí a sleduje ho
+  app.onClick((x, y) => {
+    const index = scene.pick(x, y, app.canvas.getBoundingClientRect());
+    if (index < 0) return;
+
+    app.focusOn(scene.bodyTracker(index), scene.focusDistance(index));
+    if (focusEl) {
+      focusEl.textContent = `${scene.describe(index)} · Esc pustí`;
+      focusEl.hidden = false;
+    }
+  });
+
   motionBtn?.addEventListener('click', toggleMotion);
   resetBtn?.addEventListener('click', () => app.resetView());
   syncMotionLabel();
@@ -30,7 +43,9 @@ export function createHud({ app, scene }) {
   window.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
 
-    if (event.code === 'Space') {
+    if (event.key === 'Escape') {
+      app.clearFocus();
+    } else if (event.code === 'Space') {
       event.preventDefault();
       toggleMotion();
     } else if (event.key.toLowerCase() === 'h') {
@@ -43,6 +58,9 @@ export function createHud({ app, scene }) {
     accumulator += delta;
     if (accumulator < 0.25) return;
     accumulator = 0;
+
+    // sledování mohlo skončit i jinak než přes Esc (reset, změna režimu…)
+    if (focusEl && !app.focused) focusEl.hidden = true;
 
     const { render } = app.renderer.info;
     if (fpsEl) fpsEl.textContent = String(Math.round(app.fps));

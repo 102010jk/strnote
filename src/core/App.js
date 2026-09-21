@@ -17,6 +17,13 @@ const MAX_FOV = 72;
 const FLY_STEP = 0.15;
 const FLY_DAMPING = 6; // čím víc, tím kratší doběh
 
+// Kliknutí = stisk a puštění bez velkého pohybu. Tažení otáčí kamerou.
+const CLICK_SLOP_PX = 6;
+const CLICK_MAX_MS = 400;
+
+// Jak dlouho trvá přelet ke kliknutému tělesu.
+const FOCUS_DURATION = 1.2;
+
 /**
  * Renderer + scéna + kamera + smyčka. Obsah scény sem nepatří,
  * ten se přidává přes `app.scene.add(...)` a `app.onUpdate(...)`.
@@ -75,6 +82,12 @@ export class App {
     this._flyVelocity = 0;
     this._forward = new THREE.Vector3();
 
+    this._focus = null;
+    this._focusPoint = new THREE.Vector3();
+    this._focusDelta = new THREE.Vector3();
+    this._clickHandlers = new Set();
+    this._pointerDown = null;
+
     // nekonečný zoom: OrbitControls přibližuje násobením, takže bez limitů
     // jde plynule od milimetrů po kilometry
     this.controls.minDistance = 1e-4;
@@ -114,10 +127,17 @@ export class App {
     };
 
     this._onWheel = (event) => this._handleWheel(event);
+    this._onPointerDown = (event) => {
+      if (event.button !== 0) return;
+      this._pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
+    };
+    this._onPointerUp = (event) => this._handlePointerUp(event);
 
     window.addEventListener('resize', this._onResize);
     // passive: false, jinak nejde zastavit výchozí chování kolečka
     canvas.addEventListener('wheel', this._onWheel, { passive: false });
+    canvas.addEventListener('pointerdown', this._onPointerDown);
+    canvas.addEventListener('pointerup', this._onPointerUp);
     canvas.addEventListener('webglcontextlost', this._onContextLost);
     canvas.addEventListener('webglcontextrestored', this._onContextRestored);
 
@@ -170,6 +190,7 @@ export class App {
 
     // návrat na střed: odpojená kamera mohla odjet kamkoliv
     if (mode === 'centered') {
+      this.clearFocus();
       this.controls.target.copy(this._home.target);
       this.controls.update();
     }
@@ -211,7 +232,86 @@ export class App {
     if (Math.abs(this._flyVelocity) < distance * 1e-4) this._flyVelocity = 0;
   }
 
+  /** Registruje funkci volanou při kliknutí na plátno: (clientX, clientY) => void. */
+  onClick(fn) {
+    this._clickHandlers.add(fn);
+    return () => this._clickHandlers.delete(fn);
+  }
+
+  _handlePointerUp(event) {
+    const down = this._pointerDown;
+    this._pointerDown = null;
+    if (!down || event.button !== 0) return;
+
+    // tažení myší otáčí kamerou – to kliknutí není
+    const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+    if (moved > CLICK_SLOP_PX || performance.now() - down.time > CLICK_MAX_MS) return;
+
+    for (const fn of this._clickHandlers) fn(event.clientX, event.clientY);
+  }
+
+  /**
+   * Přeletí k tělesu, dá ho do středu a pak ho sleduje, jak obíhá.
+   * `getPosition(target)` zapíše aktuální polohu tělesa do `target` a vrátí ho,
+   * nebo vrátí null, když těleso přestalo existovat – sledování pak skončí.
+   * `distance` je odstup kamery, ze kterého je těleso dobře vidět.
+   */
+  focusOn(getPosition, distance) {
+    if (!getPosition(this._focusPoint)) return;
+
+    const fromTarget = this.controls.target.clone();
+    const direction = this.camera.position.clone().sub(fromTarget);
+    const fromDistance = Math.max(direction.length(), 1e-6);
+    direction.divideScalar(fromDistance);
+
+    this._flyVelocity = 0;
+    this._focus = { getPosition, fromTarget, direction, fromDistance, distance, progress: 0 };
+  }
+
+  clearFocus() {
+    this._focus = null;
+  }
+
+  get focused() {
+    return this._focus !== null;
+  }
+
+  _updateFocus(delta) {
+    const focus = this._focus;
+    if (!focus) return;
+
+    const position = focus.getPosition(this._focusPoint);
+    if (!position) {
+      this.clearFocus();
+      return;
+    }
+
+    if (focus.progress < 1) {
+      focus.progress = Math.min(1, focus.progress + delta / FOCUS_DURATION);
+      const eased = easeInOutCubic(focus.progress);
+
+      // Odstup se prolíná logaritmicky: přelet z celé galaxie k planetě jde
+      // přes několik řádů a lineárně by se kamera přiblížila až na samém konci.
+      const distance = Math.exp(
+        THREE.MathUtils.lerp(Math.log(focus.fromDistance), Math.log(focus.distance), eased),
+      );
+
+      this.controls.target.lerpVectors(focus.fromTarget, position, eased);
+      this.camera.position.copy(this.controls.target).addScaledVector(focus.direction, distance);
+      this.camera.lookAt(this.controls.target);
+      return;
+    }
+
+    // Sledování: kamera i střed se posunou o tolik, o kolik se těleso pohnulo.
+    // Je to čistý posun, takže natočení i odstup, který si člověk mezitím
+    // nastavil kolečkem nebo tažením, zůstanou.
+    this._focusDelta.subVectors(position, this.controls.target);
+    this.camera.position.add(this._focusDelta);
+    this.controls.target.copy(position);
+  }
+
   resetView() {
+    this.clearFocus();
     this.camera.position.copy(this._home.position);
     this.controls.target.copy(this._home.target);
     this.controls.update();
@@ -244,8 +344,12 @@ export class App {
     this.renderer.info.reset();
     this._updateFlight(delta);
     this.controls.update();
-    this._updateClipping();
     for (const fn of this.updaters) fn(delta, elapsed);
+
+    // Až po scéně: polohy těles se počítají v jejím update, takže dřív by
+    // kamera sledovala polohu z minulého snímku a byla by pořád o kus pozadu.
+    this._updateFocus(delta);
+    this._updateClipping();
     this.composer.render(delta);
   };
 
@@ -271,6 +375,8 @@ export class App {
     this.updaters.clear();
     window.removeEventListener('resize', this._onResize);
     this.canvas.removeEventListener('wheel', this._onWheel);
+    this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+    this.canvas.removeEventListener('pointerup', this._onPointerUp);
     this.canvas.removeEventListener('webglcontextlost', this._onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onContextRestored);
     this.controls.dispose();
@@ -278,4 +384,8 @@ export class App {
     this.scene.environment?.dispose?.();
     this.renderer.dispose();
   }
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }

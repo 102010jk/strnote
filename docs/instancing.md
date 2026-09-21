@@ -159,6 +159,29 @@ Dva režimy:
 - **Odpojená** – zapne se `enablePan`, střed otáčení se dá odtáhnout myší
   a kamera se pohybuje volně. Přepnutím zpět na střed se vrátí do výchozího bodu.
 
+  **Kolečko v odpojeném režimu letí, nepřibližuje.** Zoom v `OrbitControls`
+  přibližuje k bodu otáčení násobením, takže se u něj zpomaluje a nikdy jím
+  neproletí. Tady se proto zoom vypne (`enableZoom = false`) a kolečko posune
+  kameru **i s bodem otáčení** po směru pohledu – vzdálenost mezi nimi zůstává,
+  takže se let nezmění v zoom.
+
+  Jedno cvaknutí uletí 15 % vzdálenosti od bodu otáčení, s doběhem jako
+  otáčení. Rychlost odvozená od vzdálenosti drží let použitelný v každém
+  měřítku, od planety po celou galaxii.
+
+  Doběh se integruje přesně (`v·(1 − e^(−k·dt))/k` na snímek), ne prostým
+  `rychlost × delta`. To by při nízkých fps uletělo víc – ověřeno: se
+  zjednodušeným krokem vyšlo při 60 fps 3,15 místo 3,0. Teď je to 3,0 při
+  30, 60 i 144 fps, takže jedno cvaknutí doletí stejně na telefonu i na počítači.
+
+  Myš posílá ~100 na cvaknutí, touchpad spoustu malých hodnot; obojí se
+  převede na „cvaknutí" a omezí na ±3 na událost, aby rychlé točení nevystřelilo
+  kameru pryč.
+
+  **Chybí dotykové ovládání letu.** Na telefonu je v odpojeném režimu
+  zablokované i sevření prstů (patří k zoomu), takže se nedá letět dopředu.
+  Až dojde na mobilní verzi, sevření musí dostat stejný let jako kolečko.
+
 Výpočet `near`/`far` pro nekonečný zoom bere odstup od středu otáčení, takže
 funguje v obou režimech stejně.
 

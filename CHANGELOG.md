@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1 – 2026-09-21
+
+V odpojené kameře kolečko myši letí, místo aby přibližovalo. Kamera se posune
+dopředu nebo dozadu i s bodem, kolem kterého se otáčí, takže se dá proletět
+skrz roj. S kamerou na střed kolečko přibližuje jako dřív.
+
 ## 1.4.0 – 2026-09-20
 
 Roj už není jednobarevný. Místo jedné barvy se volí dvě a každé těleso dostane

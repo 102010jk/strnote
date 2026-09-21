@@ -12,6 +12,11 @@ const BASE_FOV = 42;
 const BASE_ASPECT = 16 / 9;
 const MAX_FOV = 72;
 
+// Let v odpojeném režimu: jedno cvaknutí kolečka posune kameru celkem
+// o FLY_STEP násobek vzdálenosti od bodu otáčení, s doběhem jako otáčení.
+const FLY_STEP = 0.15;
+const FLY_DAMPING = 6; // čím víc, tím kratší doběh
+
 /**
  * Renderer + scéna + kamera + smyčka. Obsah scény sem nepatří,
  * ten se přidává přes `app.scene.add(...)` a `app.onUpdate(...)`.
@@ -67,6 +72,9 @@ export class App {
     this.controls.enablePan = false;
     this.cameraMode = 'centered';
 
+    this._flyVelocity = 0;
+    this._forward = new THREE.Vector3();
+
     // nekonečný zoom: OrbitControls přibližuje násobením, takže bez limitů
     // jde plynule od milimetrů po kilometry
     this.controls.minDistance = 1e-4;
@@ -105,7 +113,11 @@ export class App {
       this.start();
     };
 
+    this._onWheel = (event) => this._handleWheel(event);
+
     window.addEventListener('resize', this._onResize);
+    // passive: false, jinak nejde zastavit výchozí chování kolečka
+    canvas.addEventListener('wheel', this._onWheel, { passive: false });
     canvas.addEventListener('webglcontextlost', this._onContextLost);
     canvas.addEventListener('webglcontextrestored', this._onContextRestored);
 
@@ -152,11 +164,51 @@ export class App {
     this.cameraMode = mode;
     this.controls.enablePan = mode === 'detached';
 
+    // odpojená kamera kolečkem letí, nepřibližuje – zoom by jen dojížděl k bodu
+    this.controls.enableZoom = mode !== 'detached';
+    this._flyVelocity = 0;
+
     // návrat na střed: odpojená kamera mohla odjet kamkoliv
     if (mode === 'centered') {
       this.controls.target.copy(this._home.target);
       this.controls.update();
     }
+  }
+
+  /** Kolečko v odpojeném režimu: rozjet kameru dopředu nebo dozadu. */
+  _handleWheel(event) {
+    if (this.cameraMode !== 'detached') return; // na střed zoomuje OrbitControls
+
+    event.preventDefault();
+
+    // myš posílá ~100 na cvaknutí, touchpad spoustu malých hodnot – srovnat
+    const scale = event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 600 : 1;
+    const notches = Math.max(-3, Math.min(3, (event.deltaY * scale) / 100));
+
+    // rychlost odvozená od vzdálenosti drží let použitelný v každém měřítku
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    this._flyVelocity -= notches * distance * FLY_STEP * FLY_DAMPING;
+  }
+
+  /** Posune kameru i bod otáčení společně, aby se let neměnil v zoom. */
+  _updateFlight(delta) {
+    if (this._flyVelocity === 0) return;
+
+    this.camera.getWorldDirection(this._forward);
+
+    // Přesný integrál exponenciálního doběhu přes tenhle snímek. Prosté
+    // rychlost × delta by uletělo víc při nízkých fps – na telefonu by jedno
+    // cvaknutí doletělo jinam než na počítači.
+    const decay = Math.exp(-FLY_DAMPING * delta);
+    const step = (this._flyVelocity * (1 - decay)) / FLY_DAMPING;
+
+    this.camera.position.addScaledVector(this._forward, step);
+    this.controls.target.addScaledVector(this._forward, step);
+
+    this._flyVelocity *= decay;
+
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    if (Math.abs(this._flyVelocity) < distance * 1e-4) this._flyVelocity = 0;
   }
 
   resetView() {
@@ -190,6 +242,7 @@ export class App {
     }
 
     this.renderer.info.reset();
+    this._updateFlight(delta);
     this.controls.update();
     this._updateClipping();
     for (const fn of this.updaters) fn(delta, elapsed);
@@ -217,6 +270,7 @@ export class App {
     this.stop();
     this.updaters.clear();
     window.removeEventListener('resize', this._onResize);
+    this.canvas.removeEventListener('wheel', this._onWheel);
     this.canvas.removeEventListener('webglcontextlost', this._onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onContextRestored);
     this.controls.dispose();

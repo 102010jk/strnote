@@ -140,15 +140,28 @@ function selectInput(control) {
   return select;
 }
 
-/** Posuvník plus políčko na přesné číslo – obojí drží stejnou hodnotu. */
+/**
+ * Posuvník plus políčko na přesné číslo – obojí drží stejnou hodnotu.
+ *
+ * `log: true` = logaritmická stupnice. U rozsahu 1–10 000 by lineární posuvník
+ * měl celé rozmezí 1–100 v prvním procentu dráhy; takhle má každý řád stejně.
+ */
 function rangeInputs(control, head) {
+  const log = control.log === true;
+  const steps = 1000;
+  const ratio = control.max / control.min;
+
+  const toSlider = (value) =>
+    log ? (Math.log(Math.max(value, control.min) / control.min) / Math.log(ratio)) * steps : value;
+  const fromSlider = (position) => (log ? control.min * Math.pow(ratio, position / steps) : position);
+
   const range = document.createElement('input');
   range.type = 'range';
   range.dataset.control = control.id;
-  range.min = control.min;
-  range.max = control.max;
-  range.step = control.step;
-  range.value = control.get();
+  range.min = log ? 0 : control.min;
+  range.max = log ? steps : control.max;
+  range.step = log ? 1 : control.step;
+  range.value = toSlider(control.get());
 
   // Políčko nemá min ani max: posuvník drží rozumný rozsah na tažení,
   // napsat se dá cokoliv. Prohlížeč jinak hlásí „hodnota musí být ≤ …"
@@ -173,11 +186,11 @@ function rangeInputs(control, head) {
     // ukázat, co se opravdu nastavilo – počet se zaokrouhlí na celé
     // a nemusí se vejít do paměti, pak zůstane menší
     const applied = control.get();
-    if (source !== range) range.value = String(applied);
+    if (source !== range) range.value = String(toSlider(applied));
     number.value = format(applied);
   };
 
-  range.addEventListener('input', () => apply(range.value, range));
+  range.addEventListener('input', () => apply(fromSlider(Number(range.value)), range));
 
   // až po opuštění políčka nebo Enteru, ať se nepřepisuje během psaní
   number.addEventListener('change', () => apply(number.value, number));
@@ -186,6 +199,7 @@ function rangeInputs(control, head) {
   });
 
   function format(value) {
+    if (log) return String(Number(value.toPrecision(value >= 100 ? 5 : 3)));
     return control.step >= 1 ? String(Math.round(value)) : String(Number(value.toFixed(3)));
   }
 

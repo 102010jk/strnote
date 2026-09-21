@@ -26,9 +26,10 @@ try {
   const app = new App(canvas, {
     background: 0x05070c,
     fog: null,
-    cameraPosition: [0, 2.4, 9.5],
+    // pohled na vnitřní soustavu – dráha Marsu je 228 Gm od Slunce
+    cameraPosition: [0, 170, 360],
     cameraTarget: [0, 0, 0],
-    environment: false, // scénu má osvětlovat jen ta koule
+    environment: false, // tělesa osvětluje Slunce přímo v shaderu
   });
   const scene = new MainScene(app);
 

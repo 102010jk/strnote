@@ -1,9 +1,9 @@
 {
   "name": "strnote",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "type": "module",
-  "description": "Roj hvězd v three.js, servírovaný staticky z GitHub Pages bez build kroku.",
+  "description": "Replika sluneční soustavy v three.js, servírovaná staticky z GitHub Pages bez build kroku.",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "start": "node scripts/dev-server.mjs",

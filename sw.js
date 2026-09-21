@@ -18,6 +18,7 @@ const SHELL = [
   './src/core/pwa.js',
   './src/core/environment.js',
   './src/scenes/MainScene.js',
+  './src/scenes/solarSystem.js',
   './src/ui/Hud.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -1,5 +1,11 @@
 # Roj: jak to utáhne 100 000 těles
 
+> **Roj ve scéně už není.** Od verze 1.7.1 je tam replika sluneční soustavy
+> (docs/slunecni-soustava.md); stav s rojem je uložený v tagu `v1.7.0`.
+> Principy popsané níž – instancing, záře počítaná v shaderu, ochrana proti
+> blikání, výběr kliknutím, nekonečný zoom – ale platí dál a soustava na nich
+> stojí.
+
 Slider „Počet těles" jde na 100 000. Naivní řešení – 100 000× `new THREE.Mesh()` –
 by znamenalo 100 000 draw callů na snímek a prohlížeč by se zastavil. Tady je,
 co se místo toho dělá.

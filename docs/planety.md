@@ -1,5 +1,10 @@
 # Planety: materiály a osvětlení od hvězd
 
+> **Režim „Planety" s náhodnými soustavami zmizel s rojem ve verzi 1.7.1**
+> (stav je v tagu `v1.7.0`). Materiály a osvětlení odsud používá replika
+> sluneční soustavy, rozšířené o plynné obry a Zemi – viz
+> docs/slunecni-soustava.md.
+
 V režimu „Planety" má každá hvězda 0 až 9 planet. Planeta sama nesvítí,
 osvětluje ji její hvězda, a má materiál, podle kterého vypadá.
 

@@ -361,7 +361,8 @@ export class App {
     const distance = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-4);
 
     const near = distance * 0.002;
-    const far = Math.max(distance * 4000, 5000);
+    // aspoň přes celou sluneční soustavu (Neptun je 4500 Gm od Slunce)
+    const far = Math.max(distance * 4000, 1e5);
 
     if (Math.abs(this.camera.near - near) < near * 0.1) return;
 

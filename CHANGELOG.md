@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.1 – 2026-09-21
+
+Místo testovacího roje je uprostřed replika naší sluneční soustavy – Slunce,
+osm planet a Měsíc ve skutečných velikostech a vzdálenostech. Planety stojí
+zhruba tam, kde dnes opravdu jsou, otáčejí se kolem svých os a mají svůj
+vzhled: Země oceány, pevniny a mraky, Jupiter a Saturn pásy, Saturn prstence.
+
+Zbyl jeden posuvník na rychlost: 1 je skutečný čas, dá se zrychlit až
+10 000×. Dál jde nastavit kamera a světlo. Planety jsou zdálky vidět jako
+tečky na svých dráhách a kliknutím se k nim dá doletět.
+
+Předchozí stav s rojem je uložený jako verze 1.7.0. Jak to funguje:
+[docs/slunecni-soustava.md](docs/slunecni-soustava.md).
+
 ## 1.7.0 – 2026-09-21
 
 Na hvězdu nebo planetu jde kliknout: kamera k ní přeletí, dá ji doprostřed

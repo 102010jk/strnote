@@ -16,7 +16,7 @@ a `src/version.js`. To poslední se ukazuje na webu vedle názvu a service
 worker podle něj čistí offline cache – bez změny tam uživatelé nové soubory
 dostanou, ale stará cache se nesmaže.
 
-- **patch** – oprava, drobnost
+- **patch** – oprava, drobnost; i malá nová věc, jako štítek s číslem verze
 - **minor** – nová funkce nebo nová scéna
 - **major** – změna toho, co ten web vlastně je
 

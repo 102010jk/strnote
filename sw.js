@@ -66,7 +66,7 @@ self.addEventListener('fetch', (event) => {
   // Stale-while-revalidate by bylo rychlejší, ale ukázalo by čerstvě nasazenou
   // verzi až na druhé načtení – to jde proti „commitni a je to nasazené".
   event.respondWith(
-    fetch(request)
+    fetchFresh(request)
       .then((response) => {
         cachePut(request, response.clone());
         return response;
@@ -78,6 +78,23 @@ self.addEventListener('fetch', (event) => {
       ),
   );
 });
+
+/**
+ * Síť bez HTTP cache prohlížeče. Obyčejný fetch() ji respektuje a GitHub Pages
+ * posílá max-age=600 – po nasazení se tak nová verze mohla ukazovat až za
+ * deset minut, i když service worker šel „nejdřív na síť". Ověřeno: server už
+ * měl nový main.js, fetch() vrátil starý.
+ *
+ * `no-cache` neznamená stahovat pokaždé celé: prohlížeč se jen zeptá, jestli
+ * se soubor změnil, a nezměněný dostane zpátky jako krátké 304.
+ */
+function fetchFresh(request) {
+  const init = { cache: 'no-cache', credentials: 'same-origin' };
+
+  // navigaci nejde přebalit do nového Request s volbami, vezme se jen adresa
+  if (request.mode === 'navigate') return fetch(request.url, init);
+  return fetch(new Request(request, init));
+}
 
 function cachePut(request, response) {
   if (!response || !response.ok) return;

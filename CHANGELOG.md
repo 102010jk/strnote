@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.6.0 – 2026-09-21
+## 1.5.3 – 2026-09-21
+
+Opraveno: po nasazení se nová verze mohla ukazovat až za deset minut,
+protože prohlížeč držel staré soubory ve své cache. Teď se pokaždé zeptá,
+jestli se něco změnilo.
+
+## 1.5.2 – 2026-09-21
 
 Vedle názvu vlevo nahoře je teď malé číslo verze, takže je hned vidět,
 co zrovna běží.

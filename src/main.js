@@ -2,6 +2,10 @@ import { App } from './core/App.js';
 import { MainScene } from './scenes/MainScene.js';
 import { createHud } from './ui/Hud.js';
 import { registerServiceWorker } from './core/pwa.js';
+import { VERSION } from './version.js';
+
+const versionLabel = document.querySelector('[data-version]');
+if (versionLabel) versionLabel.textContent = `v${VERSION}`;
 
 const canvas = document.getElementById('scene');
 const bootText = document.querySelector('[data-boot-text]');
@@ -39,7 +43,7 @@ try {
   // pohodlný přístup z konzole při ladění
   window.strnote = { app, scene };
 
-  registerServiceWorker();
+  registerServiceWorker(VERSION);
 } catch (error) {
   fail(error);
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0 – 2026-09-21
+
+Vedle názvu vlevo nahoře je teď malé číslo verze, takže je hned vidět,
+co zrovna běží.
+
 ## 1.5.1 – 2026-09-21
 
 Opraveno silné blikání roje při oddálení, které přišlo s 1.5.0. Vzdálené

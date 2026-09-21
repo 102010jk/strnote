@@ -12,7 +12,9 @@ z pohledu toho, kdo se na web dívá. Žádný výpis souborů, žádné technic
 
 ### Verzování
 SemVer. Číslo drž stejné na třech místech: `CHANGELOG.md`, `package.json`
-a konstanta `VERSION` v `sw.js` (podle ní se čistí offline cache).
+a `src/version.js`. To poslední se ukazuje na webu vedle názvu a service
+worker podle něj čistí offline cache – bez změny tam uživatelé nové soubory
+dostanou, ale stará cache se nesmaže.
 
 - **patch** – oprava, drobnost
 - **minor** – nová funkce nebo nová scéna

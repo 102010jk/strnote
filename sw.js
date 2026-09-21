@@ -1,6 +1,9 @@
 // Service worker: web funguje i offline a po instalaci na plochu startuje okamžitě.
 // V nativním obalu (Capacitor) se neregistruje – tam jsou soubory lokálně už tak.
-const VERSION = '1.5.1';
+// Verze přijde v adrese registrace (sw.js?v=1.6.0) ze src/version.js –
+// jedno číslo pro web i cache. Nová verze = nová adresa = prohlížeč
+// service worker sám aktualizuje.
+const VERSION = new URL(self.location.href).searchParams.get('v') ?? 'dev';
 const CACHE = `strnote-${VERSION}`;
 const CDN = 'https://cdn.jsdelivr.net/';
 
@@ -10,7 +13,9 @@ const SHELL = [
   './manifest.webmanifest',
   './styles/main.css',
   './src/main.js',
+  './src/version.js',
   './src/core/App.js',
+  './src/core/pwa.js',
   './src/core/environment.js',
   './src/scenes/MainScene.js',
   './src/ui/Hud.js',

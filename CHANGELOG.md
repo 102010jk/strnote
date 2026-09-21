@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.2 – 2026-09-21
+
+Dají se tvořit tělesa. V panelu vyber, co má kliknutí vytvořit – planetu,
+měsíc nebo hvězdu –, nastav hmotnost, velikost a materiál nebo teplotu,
+a klikni do scény. Těleso se objeví přesně tam, kam klikneš.
+
+Oběh se počítá z hmotnosti jako ve skutečnosti: planeta obíhá nejbližší
+hvězdu, měsíc planetu vedle kurzoru, a jak rychle, záleží na tom, jak je
+to, kolem čeho obíhají, těžké. Měsíc jde vytvořit jen tak blízko planety,
+kde ho doopravdy udrží – jinak se ukáže proč ne. Hvězda zůstane stát
+a svítí na planety, které kolem ní vytvoříš.
+
+Vytvořená tělesa se zatím neukládají. Jak to funguje:
+[docs/tvoreni.md](docs/tvoreni.md).
+
 ## 1.7.1 – 2026-09-21
 
 Místo testovacího roje je uprostřed replika naší sluneční soustavy – Slunce,

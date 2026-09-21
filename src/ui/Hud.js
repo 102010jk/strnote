@@ -8,12 +8,44 @@ export function createHud({ app, scene }) {
   const drawsEl = document.querySelector('[data-draws]');
   const trisEl = document.querySelector('[data-tris]');
   const focusEl = document.querySelector('[data-focus]');
+  const toastEl = document.querySelector('[data-toast]');
   const motionBtn = document.querySelector('[data-action="toggle-motion"]');
   const resetBtn = document.querySelector('[data-action="reset-view"]');
 
-  for (const control of scene.controls ?? []) {
-    panel?.append(buildControl(control));
-  }
+  const fields = (scene.controls ?? []).map((control) => {
+    const element = buildControl(control);
+    panel?.append(element);
+    return { control, element };
+  });
+
+  // Některé ovladače patří jen k jednomu typu tělesa (`visible`). Stačí to
+  // přepočítat po každé změně v panelu – události z polí k němu probublají.
+  const refresh = () => {
+    for (const { control, element } of fields) {
+      element.hidden = control.visible ? !control.visible() : false;
+    }
+    document.body.classList.toggle('is-creating', Boolean(scene.creating));
+  };
+  panel?.addEventListener('input', refresh);
+  panel?.addEventListener('change', refresh);
+  refresh();
+
+  let toastTimer = 0;
+  const toast = (text, isError = false) => {
+    if (!toastEl) return;
+    toastEl.textContent = text;
+    toastEl.classList.toggle('toast--error', isError);
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, isError ? 5000 : 3500);
+  };
+
+  const stopCreating = () => {
+    const select = panel?.querySelector('[data-control="create"]');
+    if (!select) return;
+    select.value = 'none';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  };
 
   const syncMotionLabel = () => {
     if (motionBtn) motionBtn.textContent = scene.params.animate ? 'Pauza' : 'Spustit';
@@ -24,9 +56,23 @@ export function createHud({ app, scene }) {
     syncMotionLabel();
   };
 
-  // kliknutí na těleso: kamera k němu přeletí a sleduje ho
   app.onClick((x, y) => {
-    const index = scene.pick(x, y, app.canvas.getBoundingClientRect());
+    const rect = app.canvas.getBoundingClientRect();
+
+    // tvoření: kliknutí vytvoří těleso
+    if (scene.creating) {
+      const result = scene.spawn(x, y, rect);
+      if (result.error) {
+        toast(result.error, true);
+      } else {
+        const period = result.period ? ` · oběh ${formatPeriod(result.period)}` : '';
+        toast(`Vytvořeno: ${scene.describe(result.index)}${period}`);
+      }
+      return;
+    }
+
+    // jinak kliknutí na těleso: kamera k němu přeletí a sleduje ho
+    const index = scene.pick(x, y, rect);
     if (index < 0) return;
 
     app.focusOn(scene.bodyTracker(index), scene.focusDistance(index));
@@ -44,7 +90,9 @@ export function createHud({ app, scene }) {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
 
     if (event.key === 'Escape') {
-      app.clearFocus();
+      // Esc nejdřív ukončí tvoření, teprve pak sledování
+      if (scene.creating) stopCreating();
+      else app.clearFocus();
     } else if (event.code === 'Space') {
       event.preventDefault();
       toggleMotion();
@@ -69,6 +117,17 @@ export function createHud({ app, scene }) {
   });
 }
 
+/** Oběžná doba ve dnech, čitelně. */
+function formatPeriod(days) {
+  const abs = Math.abs(days);
+  const number = (value, digits = 1) => value.toLocaleString('cs-CZ', { maximumFractionDigits: digits });
+
+  if (!Number.isFinite(abs)) return 'stojí';
+  if (abs < 1) return `${number(abs * 24)} h`;
+  if (abs < 365.25) return `${number(abs)} dní`;
+  return `${number(abs / 365.25)} let`;
+}
+
 function formatCount(value) {
   if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
   if (value >= 1e3) return `${Math.round(value / 1e3)}k`;
@@ -76,6 +135,13 @@ function formatCount(value) {
 }
 
 function buildControl(control) {
+  if (control.type === 'heading') {
+    const heading = document.createElement('h3');
+    heading.className = 'panel__section';
+    heading.textContent = control.label;
+    return heading;
+  }
+
   const wrapper = document.createElement('label');
   wrapper.className = 'field';
 

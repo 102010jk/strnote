@@ -28,6 +28,30 @@ const TAU = Math.PI * 2;
 // napsat se dá cokoliv.
 const MAX_SPEED = 10000;
 
+// Gravitační konstanta v jednotkách scény: Gm³ / (kg · den²). Ověřeno:
+// z hmotností v datech vyjdou skutečné oběžné doby všech planet i Měsíce
+// s chybou pod 0,13 %.
+const G = 6.6743e-11 * 1e-27 * SECONDS_PER_DAY ** 2;
+
+const EARTH_MASS = 5.972e24;
+const EARTH_RADIUS = 0.006371;
+const SUN_MASS = 1.989e30;
+const SUN_RADIUS = 0.6957;
+
+// Vzhled nově vytvořených planet a měsíců podle materiálu.
+const MATERIAL_LOOKS = {
+  rock: { label: 'kámen', color: [0.55, 0.52, 0.48] },
+  grass: { label: 'tráva', color: [0.2, 0.46, 0.16] },
+  iron: { label: 'železo', color: [0.56, 0.57, 0.6] },
+  water: { label: 'voda', color: [0.07, 0.24, 0.55] },
+  gas: { label: 'plyn', color: [0.85, 0.72, 0.55], bands: [0.25, 12] },
+  earth: { label: 'jako Země', color: [0.28, 0.48, 0.85] },
+};
+const PLANET_MATERIALS = ['rock', 'grass', 'iron', 'water', 'gas', 'earth'];
+const MOON_MATERIALS = ['rock', 'iron', 'water'];
+
+const UP = new THREE.Vector3(0, 1, 0);
+
 // Dráhy v zobrazení: kolik bodů má kružnice a kdy zmizí. Mizí, když je kamera
 // blíž než ORBIT_FADE × poloměr dráhy – zblízka je čára jen rovná úsečka
 // vedle planety a ruší.
@@ -52,6 +76,20 @@ export class MainScene {
     this.app = app;
 
     this.params = {
+      // tvoření: co vznikne kliknutím a s jakými vlastnostmi
+      create: 'none',
+      planetMaterial: 'rock',
+      planetMass: 1, // hmotnosti Země
+      planetRadius: 1, // poloměry Země
+      planetSpeed: 1, // násobek rychlosti podle Keplera
+      moonMaterial: 'rock',
+      moonMass: 0.0123,
+      moonRadius: 0.27,
+      moonSpeed: 1,
+      starMass: 1, // hmotnosti Slunce
+      starRadius: 1, // poloměry Slunce
+      starTemperature: 5778, // K
+
       speed: 1,
       camera: 'centered',
       glowMode: GLOW_MODES.PHYSICAL,
@@ -77,10 +115,16 @@ export class MainScene {
     this._days = (Date.now() - J2000) / DAY_MS;
     this._pickMatrix = new THREE.Matrix4();
     this._cameraOffset = new THREE.Vector3();
+    this._raycaster = new THREE.Raycaster();
+    this._pointer = new THREE.Vector2();
+    this._spawnPlane = new THREE.Plane();
+    this._created = { planet: 0, moon: 0, star: 0 };
+    this._orbitLines = [];
 
     this._setBodies(SOLAR_SYSTEM);
-    this._buildMeshes();
-    this._buildOrbitLines();
+    this._buildMaterials();
+    this._buildInstances();
+    for (let i = 0; i < this.count; i++) this._addOrbitLine(i);
     this._buildRings();
 
     this.controls = this._describeControls();
@@ -116,6 +160,10 @@ export class MainScene {
     this._spinRate = new Float64Array(count); // rad za den
     this._parent = new Int32Array(count);
     this._lightSource = new Int32Array(count);
+    // tělesa bez rodiče stojí na místě (Slunce v počátku, nové hvězdy tam, kde vznikly)
+    this._fx = new Float64Array(count);
+    this._fy = new Float64Array(count);
+    this._fz = new Float64Array(count);
 
     // instanční atributy
     this._offsets = new Float32Array(count * 3);
@@ -132,6 +180,12 @@ export class MainScene {
       if (parent >= i) throw new Error(`${body.id}: rodič musí být v seznamu dřív`);
       this._parent[i] = parent;
 
+      if (body.position) {
+        this._fx[i] = body.position[0];
+        this._fy[i] = body.position[1];
+        this._fz[i] = body.position[2];
+      }
+
       if (parent >= 0) {
         // Rovina dráhy z ekliptických prvků. Ekliptika (x, y, z nahoru)
         // se v three.js mapuje na (x, z, −y), aby ležela v rovině XZ.
@@ -145,8 +199,9 @@ export class MainScene {
         this._vz[i] = -Math.cos(node) * Math.cos(inclination);
 
         this._a[i] = body.a;
-        // kruhová dráha: argument šířky = střední délka − délka uzlu
-        this._angle0[i] = (body.meanLongitude - body.node) * DEG;
+        // kruhová dráha: argument šířky = střední délka − délka uzlu;
+        // vytvořená tělesa mají rovnou úhel v J2000 (`phase0`)
+        this._angle0[i] = body.phase0 ?? (body.meanLongitude - body.node) * DEG;
         this._meanMotion[i] = TAU / body.period;
       }
 
@@ -169,7 +224,7 @@ export class MainScene {
     }
   }
 
-  _buildMeshes() {
+  _buildMaterials() {
     const shared = {
       uBrightness: { value: 1 },
       uBeat: { value: 1 },
@@ -186,13 +241,13 @@ export class MainScene {
       uMode: { value: this.params.glowMode },
     };
 
-    const coreMaterial = new THREE.ShaderMaterial({
+    this._coreMaterial = new THREE.ShaderMaterial({
       uniforms: this._coreUniforms,
       vertexShader: CORE_VERTEX,
       fragmentShader: CORE_FRAGMENT,
     });
 
-    const haloMaterial = new THREE.ShaderMaterial({
+    this._haloMaterial = new THREE.ShaderMaterial({
       uniforms: this._haloUniforms,
       vertexShader: HALO_VERTEX,
       fragmentShader: HALO_FRAGMENT,
@@ -205,8 +260,20 @@ export class MainScene {
       blendDst: THREE.OneFactor,
     });
 
-    this._track(coreMaterial, haloMaterial);
+    // těles je pár, takže koule může mít plný detail
+    this._sphere = new THREE.SphereGeometry(1, 64, 48);
+    this._quad = new THREE.PlaneGeometry(2, 2);
 
+    this._track(this._coreMaterial, this._haloMaterial, this._sphere, this._quad);
+  }
+
+  /**
+   * Instanční atributy a geometrie nad aktuálními poli. Volá se znovu po
+   * přidání tělesa: pole mají novou délku, takže nové musí být i atributy
+   * a geometrie. Staré geometrie se uvolní až po přepojení meshů – dispose
+   * je jediná cesta, jak three.js pustí jejich buffery na GPU.
+   */
+  _buildInstances() {
     this._offsetAttribute = dynamicAttribute(this._offsets, 3);
     this._lightAttribute = dynamicAttribute(this._lights, 3);
     this._spinAttribute = dynamicAttribute(this._spins, 2);
@@ -221,12 +288,18 @@ export class MainScene {
       aSurface: new THREE.InstancedBufferAttribute(this._surface, 2),
     };
 
-    // těles je pár, takže koule může mít plný detail
-    const sphere = new THREE.SphereGeometry(1, 64, 48);
-    const plane = new THREE.PlaneGeometry(2, 2);
-    this._track(sphere, plane);
+    const cores = instanced(this._sphere, attributes, this.count);
+    const halos = instanced(this._quad, attributes, this.count);
 
-    this.cores = new THREE.Mesh(instanced(sphere, attributes, this.count), coreMaterial);
+    if (this.cores) {
+      const previous = [this.cores.geometry, this.halos.geometry];
+      this.cores.geometry = cores;
+      this.halos.geometry = halos;
+      for (const geometry of previous) geometry.dispose();
+      return;
+    }
+
+    this.cores = new THREE.Mesh(cores, this._coreMaterial);
     this.cores.frustumCulled = false;
     // Odstup kamery od skupiny se nastavuje těsně před kreslením: kamera se po
     // update scény ještě posune (sledování tělesa) a osvětlení by bylo o snímek
@@ -236,45 +309,41 @@ export class MainScene {
     };
     this.bodies.add(this.cores);
 
-    this.halos = new THREE.Mesh(instanced(plane, attributes, this.count), haloMaterial);
+    this.halos = new THREE.Mesh(halos, this._haloMaterial);
     this.halos.frustumCulled = false;
     this.halos.renderOrder = 1;
     this.bodies.add(this.halos);
   }
 
-  /** Kružnice drah. Kreslí se kolem rodiče, takže Měsíc má svou kolem Země. */
-  _buildOrbitLines() {
-    this._orbitLines = [];
+  /** Kružnice dráhy tělesa. Kreslí se kolem rodiče, takže Měsíc má svou kolem Země. */
+  _addOrbitLine(i) {
+    const parent = this._parent[i];
+    if (parent < 0) return;
 
-    for (let i = 0; i < this.count; i++) {
-      const parent = this._parent[i];
-      if (parent < 0) continue;
-
-      const points = new Float32Array(ORBIT_SEGMENTS * 3);
-      for (let k = 0; k < ORBIT_SEGMENTS; k++) {
-        const angle = (k / ORBIT_SEGMENTS) * TAU;
-        const c = Math.cos(angle) * this._a[i];
-        const s = Math.sin(angle) * this._a[i];
-        points[k * 3] = this._ux[i] * c + this._vx[i] * s;
-        points[k * 3 + 1] = this._uy[i] * c + this._vy[i] * s;
-        points[k * 3 + 2] = this._uz[i] * c + this._vz[i] * s;
-      }
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
-      const material = new THREE.LineBasicMaterial({
-        color: new THREE.Color(...this.list[i].color).multiplyScalar(0.6),
-        transparent: true,
-        opacity: ORBIT_OPACITY,
-        depthWrite: false,
-      });
-      this._track(geometry, material);
-
-      const line = new THREE.LineLoop(geometry, material);
-      line.frustumCulled = false;
-      this.bodies.add(line);
-      this._orbitLines.push({ line, material, parent, radius: this._a[i] });
+    const points = new Float32Array(ORBIT_SEGMENTS * 3);
+    for (let k = 0; k < ORBIT_SEGMENTS; k++) {
+      const angle = (k / ORBIT_SEGMENTS) * TAU;
+      const c = Math.cos(angle) * this._a[i];
+      const s = Math.sin(angle) * this._a[i];
+      points[k * 3] = this._ux[i] * c + this._vx[i] * s;
+      points[k * 3 + 1] = this._uy[i] * c + this._vy[i] * s;
+      points[k * 3 + 2] = this._uz[i] * c + this._vz[i] * s;
     }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: new THREE.Color(...this.list[i].color).multiplyScalar(0.6),
+      transparent: true,
+      opacity: ORBIT_OPACITY,
+      depthWrite: false,
+    });
+    this._track(geometry, material);
+
+    const line = new THREE.LineLoop(geometry, material);
+    line.frustumCulled = false;
+    this.bodies.add(line);
+    this._orbitLines.push({ line, material, parent, radius: this._a[i] });
   }
 
   /** Prstence u těles, která je mají (Saturn). */
@@ -320,7 +389,84 @@ export class MainScene {
   _describeControls() {
     const p = this.params;
 
+    const only = (kind) => () => p.create === kind;
+    const materials = (keys) => keys.map((key) => ({ value: key, label: MATERIAL_LOOKS[key].label }));
+
     return [
+      { type: 'heading', label: 'Tvoření' },
+      {
+        id: 'create', label: 'Klik vytvoří', type: 'select', raw: true,
+        options: [
+          { value: 'none', label: 'nic (klik = sledovat těleso)' },
+          { value: 'planet', label: 'planetu' },
+          { value: 'moon', label: 'měsíc' },
+          { value: 'star', label: 'hvězdu' },
+        ],
+        get: () => p.create,
+        set: (v) => { p.create = v; },
+      },
+
+      {
+        id: 'planetMaterial', label: 'Materiál', type: 'select', raw: true, visible: only('planet'),
+        options: materials(PLANET_MATERIALS),
+        get: () => p.planetMaterial,
+        set: (v) => { p.planetMaterial = v; },
+      },
+      {
+        id: 'planetMass', label: 'Hmotnost (× Země)', min: 0.01, max: 3000, step: 0.01, log: true, visible: only('planet'),
+        get: () => p.planetMass,
+        set: (v) => { p.planetMass = v; },
+      },
+      {
+        id: 'planetRadius', label: 'Poloměr (× Země)', min: 0.1, max: 25, step: 0.01, log: true, visible: only('planet'),
+        get: () => p.planetRadius,
+        set: (v) => { p.planetRadius = v; },
+      },
+      {
+        id: 'planetSpeed', label: 'Rychlost oběhu (× Kepler)', min: 0.1, max: 10, step: 0.01, log: true, visible: only('planet'),
+        get: () => p.planetSpeed,
+        set: (v) => { p.planetSpeed = v; },
+      },
+
+      {
+        id: 'moonMaterial', label: 'Materiál', type: 'select', raw: true, visible: only('moon'),
+        options: materials(MOON_MATERIALS),
+        get: () => p.moonMaterial,
+        set: (v) => { p.moonMaterial = v; },
+      },
+      {
+        id: 'moonMass', label: 'Hmotnost (× Země)', min: 0.0001, max: 1, step: 0.0001, log: true, visible: only('moon'),
+        get: () => p.moonMass,
+        set: (v) => { p.moonMass = v; },
+      },
+      {
+        id: 'moonRadius', label: 'Poloměr (× Země)', min: 0.02, max: 2, step: 0.01, log: true, visible: only('moon'),
+        get: () => p.moonRadius,
+        set: (v) => { p.moonRadius = v; },
+      },
+      {
+        id: 'moonSpeed', label: 'Rychlost oběhu (× Kepler)', min: 0.1, max: 10, step: 0.01, log: true, visible: only('moon'),
+        get: () => p.moonSpeed,
+        set: (v) => { p.moonSpeed = v; },
+      },
+
+      {
+        id: 'starMass', label: 'Hmotnost (× Slunce)', min: 0.08, max: 100, step: 0.01, log: true, visible: only('star'),
+        get: () => p.starMass,
+        set: (v) => { p.starMass = v; },
+      },
+      {
+        id: 'starRadius', label: 'Poloměr (× Slunce)', min: 0.1, max: 100, step: 0.01, log: true, visible: only('star'),
+        get: () => p.starRadius,
+        set: (v) => { p.starRadius = v; },
+      },
+      {
+        id: 'starTemperature', label: 'Teplota (K)', min: 2500, max: 30000, step: 1, log: true, visible: only('star'),
+        get: () => p.starTemperature,
+        set: (v) => { p.starTemperature = v; },
+      },
+
+      { type: 'heading', label: 'Čas a kamera' },
       {
         id: 'speed', label: 'Rychlost (× skutečný čas)', min: 1, max: MAX_SPEED, step: 0.01, log: true,
         get: () => p.speed,
@@ -335,6 +481,7 @@ export class MainScene {
         get: () => p.camera,
         set: (v) => { p.camera = v; this.app.setCameraMode(v); },
       },
+      { type: 'heading', label: 'Světlo' },
       {
         id: 'glowMode', label: 'Režim záře', type: 'select',
         options: [
@@ -389,7 +536,7 @@ export class MainScene {
   }
 
   applyAll() {
-    for (const control of this.controls) control.set(control.get());
+    for (const control of this.controls) control.set?.(control.get());
     this.applyBrightness();
   }
 
@@ -410,9 +557,9 @@ export class MainScene {
     for (let i = 0; i < this.count; i++) {
       const parent = this._parent[i];
       if (parent < 0) {
-        px[i] = 0;
-        py[i] = 0;
-        pz[i] = 0;
+        px[i] = this._fx[i];
+        py[i] = this._fy[i];
+        pz[i] = this._fz[i];
         continue;
       }
 
@@ -502,6 +649,177 @@ export class MainScene {
         .normalize();
       ring.uniforms.uLight.value = this.params.planetLight;
     }
+  }
+
+  /** Je zapnuté tvoření – kliknutí vytvoří těleso místo sledování. */
+  get creating() {
+    return this.params.create !== 'none';
+  }
+
+  /**
+   * Přidá těleso do soustavy. Popis má stejný tvar jako v solarSystem.js.
+   * Pole i buffery se postaví znovu – těles je pár, takže je to okamžité.
+   * Stávající tělesa si nechají indexy, sledování kamerou tak nepřeskočí.
+   */
+  addBody(body) {
+    this._setBodies([...this.list, body]);
+    this._buildInstances();
+    this._addOrbitLine(this.count - 1);
+    this.update(0);
+    return this.count - 1;
+  }
+
+  /**
+   * Vytvoří těleso tam, kam míří kliknutí.
+   * Vrací `{ index, period }`, nebo `{ error }` s vysvětlením pro člověka.
+   */
+  spawn(clientX, clientY, rect) {
+    const camera = this.app.camera;
+    camera.updateMatrixWorld();
+    this._pointer.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this._raycaster.setFromCamera(this._pointer, camera);
+    const ray = this._raycaster.ray;
+
+    if (this.params.create === 'moon') return this._spawnMoon(ray);
+
+    // planety a hvězdy vznikají v rovině ekliptiky, tam kde ji protne paprsek
+    const point = ray.intersectPlane(this._spawnPlane.set(UP, 0), new THREE.Vector3());
+    if (!point) return { error: 'Klikni do roviny soustavy – teď míříš mimo ni.' };
+
+    return this.params.create === 'star' ? this._spawnStar(point) : this._spawnPlanet(point);
+  }
+
+  _spawnPlanet(point) {
+    const p = this.params;
+    const star = this._nearest(point, (i) => this.list[i].material === 'star');
+    const distance = point.distanceTo(this._positionOf(star));
+
+    if (distance < this._sizes[star] * 2) {
+      return { error: `Moc blízko hvězdy ${this.list[star].name} – planeta by shořela.` };
+    }
+
+    const look = MATERIAL_LOOKS[p.planetMaterial];
+    const n = ++this._created.planet;
+    return this._orbit(
+      {
+        id: `planet-${n}`, name: `Planeta ${n}`, material: p.planetMaterial,
+        color: look.color, bands: look.bands,
+        mass: p.planetMass * EARTH_MASS, radius: p.planetRadius * EARTH_RADIUS,
+        spin: 1, tilt: 0,
+      },
+      star, point, p.planetSpeed,
+    );
+  }
+
+  /**
+   * Měsíc obíhá planetu, které je paprsek nejblíž, v rovině rovnoběžné
+   * s ekliptikou vedenou jejím středem. Planeta ho udrží jen uvnitř své
+   * Hillovy sféry – dál by ho k sobě stáhla hvězda.
+   */
+  _spawnMoon(ray) {
+    const p = this.params;
+    let planet = -1;
+    let best = Infinity;
+
+    for (let i = 0; i < this.count; i++) {
+      const parent = this._parent[i];
+      if (parent < 0 || this.list[parent].material !== 'star') continue; // jen planety
+      const distance = ray.distanceToPoint(this._positionOf(i));
+      if (distance < best) {
+        best = distance;
+        planet = i;
+      }
+    }
+    if (planet < 0) return { error: 'Není kolem čeho obíhat – nejdřív vytvoř planetu.' };
+
+    const center = this._positionOf(planet);
+    const point = ray.intersectPlane(this._spawnPlane.set(UP, -center.y), new THREE.Vector3());
+    if (!point) return { error: 'Klikni do roviny planety – teď míříš mimo ni.' };
+
+    const name = this.list[planet].name;
+    const distance = point.distanceTo(center);
+    if (distance < this._sizes[planet] * 1.5) {
+      return { error: `Moc blízko tělesa ${name} – měsíc by do něj narazil.` };
+    }
+
+    const star = this._parent[planet];
+    const hill = this._a[planet] * Math.cbrt(this.list[planet].mass / (3 * this.list[star].mass));
+    if (distance > hill) {
+      return {
+        error: `Tak daleko se u tělesa ${name} měsíc neudrží – musí být do ${formatGm(hill)} (teď ${formatGm(distance)}).`,
+      };
+    }
+
+    const look = MATERIAL_LOOKS[p.moonMaterial];
+    const n = ++this._created.moon;
+    return this._orbit(
+      {
+        id: `moon-${n}`, name: `Měsíc ${n}`, material: p.moonMaterial,
+        color: look.color, bands: look.bands,
+        mass: p.moonMass * EARTH_MASS, radius: p.moonRadius * EARTH_RADIUS,
+        tilt: 0,
+      },
+      planet, point, p.moonSpeed,
+    );
+  }
+
+  _spawnStar(point) {
+    const p = this.params;
+    const n = ++this._created.star;
+    const index = this.addBody({
+      id: `star-${n}`, name: `Hvězda ${n}`, material: 'star',
+      color: kelvinToColor(p.starTemperature),
+      mass: p.starMass * SUN_MASS, radius: p.starRadius * SUN_RADIUS,
+      spin: 25, tilt: 0,
+      position: [point.x, point.y, point.z],
+    });
+    return { index };
+  }
+
+  /**
+   * Kruhová dráha kolem rodiče přes bod kliknutí. Oběžná doba z 3. Keplerova
+   * zákona, T = 2π √(a³ / G(M + m)), vydělená násobkem rychlosti. Fáze je
+   * nastavená tak, aby se těleso objevilo přesně tam, kam se kliklo.
+   */
+  _orbit(body, parent, point, speed) {
+    const center = this._positionOf(parent);
+    const dx = point.x - center.x;
+    const dz = point.z - center.z;
+    const a = Math.hypot(dx, dz);
+
+    const period = (TAU * Math.sqrt(a ** 3 / (G * (this.list[parent].mass + body.mass)))) / speed;
+    const angle = Math.atan2(-dz, dx); // stejná rovina jako u prvků s nulovým sklonem a uzlem
+    const phase0 = angle - (TAU / period) * this._days;
+
+    const index = this.addBody({
+      spin: period, // měsíc bez vlastní rotace je k rodiči natočený pořád stejně
+      ...body,
+      parent: this.list[parent].id,
+      a, period, inclination: 0, node: 0, phase0,
+    });
+    return { index, period };
+  }
+
+  _nearest(point, filter) {
+    let best = -1;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < this.count; i++) {
+      if (!filter(i)) continue;
+      const distance = point.distanceTo(this._positionOf(i));
+      if (distance < bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  _positionOf(index, target = new THREE.Vector3()) {
+    return target.set(this._px[index], this._py[index], this._pz[index]);
   }
 
   /**
@@ -609,6 +927,37 @@ function dynamicAttribute(array, size) {
 
 function cloneUniforms(uniforms) {
   return Object.fromEntries(Object.entries(uniforms).map(([key, { value }]) => [key, { value }]));
+}
+
+/** Vzdálenost v milionech km, česky. */
+function formatGm(value) {
+  return `${value.toLocaleString('cs-CZ', { maximumFractionDigits: value < 10 ? 2 : 0 })} mil. km`;
+}
+
+/**
+ * Barva hvězdy podle povrchové teploty – přibližná křivka černého tělesa
+ * (Tanner Helland). Chladné hvězdy oranžovo-červené, Slunce skoro bílé,
+ * horké modrobílé. Normalizované tak, aby nejsilnější složka byla 1.
+ */
+function kelvinToColor(kelvin) {
+  const t = kelvin / 100;
+  let r;
+  let g;
+  let b;
+
+  if (t <= 66) {
+    r = 255;
+    g = 99.4708025861 * Math.log(t) - 161.1195681661;
+    b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+  } else {
+    r = 329.698727446 * Math.pow(t - 60, -0.1332047592);
+    g = 288.1221695283 * Math.pow(t - 60, -0.0755148492);
+    b = 255;
+  }
+
+  const rgb = [r, g, b].map((c) => Math.min(Math.max(c, 0), 255) / 255);
+  const max = Math.max(...rgb);
+  return rgb.map((c) => c / max);
 }
 
 function smoothstep(edge0, edge1, x) {

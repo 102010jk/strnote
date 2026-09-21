@@ -31,6 +31,7 @@ docs/mobile.md           jak z tohohle udělat appku pro Android a iOS
 docs/instancing.md       jak scéna utáhne 100 000 těles, záře v shaderu, nekonečný zoom
 docs/planety.md          materiály planet a jak je osvětlují hvězdy
 docs/slunecni-soustava.md replika soustavy: data, čas, přesnost, značky
+docs/tvoreni.md          tvoření planet, měsíců a hvězd kliknutím
 src/scenes/MainScene.js  ← obsah scény, tohle je soubor, který se přepisuje
 src/ui/Hud.js            napojení sliderů a tlačítek na scénu
 .github/workflows/       deploy na Pages při každém pushi do main

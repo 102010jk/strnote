@@ -12,6 +12,10 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` musí vyhrát i nad `display: grid` u polí panelu – výchozí pravidlo
+   prohlížeče má nižší prioritu a schované ovladače by zůstaly vidět */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
@@ -162,6 +166,39 @@ body.hud-hidden .hud {
   font-size: 12px;
   color: var(--fg);
   white-space: nowrap;
+}
+
+.toast {
+  max-width: min(520px, 60vw);
+  white-space: normal;
+  text-align: center;
+}
+
+.toast--error {
+  border-color: rgba(255, 138, 122, 0.5);
+  color: #ffb4a8;
+}
+
+/* tvoření: kurzor ukazuje, že kliknutí něco vytvoří */
+body.is-creating #scene {
+  cursor: crosshair;
+}
+
+.panel__section {
+  margin: 6px 0 -2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.panel__section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .stats {

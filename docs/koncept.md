@@ -39,7 +39,7 @@ celá rezerva. Koule může zůstat jedna pro všechny a lišit se:
   variant, pořád jedno kreslení.
 - **typem záře** u hvězd – teplota barvy, koróna, síla paprsků, tep
 
-Při tisícovce těles je na tohle rozpočet víc než dost (scéna teď jede na 1 %).
+Při tisícovce těles je na tohle rozpočet víc než dost (scéna teď bere 2–4 % času na snímek).
 
 ### Souhvězdí
 

@@ -175,6 +175,40 @@ pohybech kamery, 60 000 těles:
 Nastaveno na **10 px**. Výš už jen ubírá jas a rozmazává, níž se blikání vrací.
 Výkon to nestojí nic měřitelného.
 
+### Jádra blikají jinak než halo
+
+Tohle se objevilo až v 1.5.0, kdy se jádra zase začala kreslit (předtím je
+schovávala chyba popsaná níž). Jádro pod pixel bliká stejně jako halo, jen hůř:
+je nad prahem bloomu a ten každé problesknutí rozmaže do velké skvrny.
+
+Postup z hala – zvětšit a ztlumit – tady **nefunguje**, a to je poučné. Jádro
+je neprůhledné a zapisuje hloubku, takže ztlumené tmavé kolečko zakryje záři
+své hvězdy i sousedních. Naměřeno na 60 000 tělesech zdálky: blikání sice
+kleslo, ale jas scény spadl z 92 na 28 (minimum 1,5 px) a na 3 (minimum 3 px).
+Galaxie prostě zhasla pod tmavými kolečky.
+
+Správné řešení je jádro, které se na obrazovce nedá spolehlivě vykreslit,
+**nekreslit vůbec** (nulová velikost ve vertex shaderu = žádné pixely). Hvězdu
+pak zastoupí halo, které má vlastní jasný střed a je proti blikání ošetřené.
+Jádro se ukáže až tam, kde je opravdu rozlišitelné.
+
+Změna jednoho pixelu mezi snímky při podpixelových posunech kamery,
+60 000 těles, pohled zdálky:
+
+| Stav | Změna na pixel | Jas scény |
+|---|---|---|
+| bez jader (ideál) | 0,051 | 92 |
+| 1.5.0 – jádra vždy | 0,501 | 100 |
+| jádra ztlumená, min 1,5 px | 0,180 | 28 |
+| **jádra od 1,5 px, jinak žádná** | **0,051** | **92** |
+
+Hranice je poloměr 1,5 px; mezi 0,75 a 3 px nebyl měřitelný rozdíl. Zblízka
+se jádra kreslí normálně.
+
+Metrika je tady jiná než u hala a je lepší: kolísání *součtu* jasu přes výřez
+dokáže problesknutí jedné hvězdy a zhasnutí jiné navzájem vyrušit, oko ale
+vidí obojí. Průměrná změna jednoho pixelu mezi snímky to nezamaskuje.
+
 ## Typy oběhu
 
 Každé těleso má rovinu oběhu jako dvojici kolmých jednotkových vektorů `u`, `v`,

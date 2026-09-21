@@ -278,6 +278,7 @@ export class MainScene {
     this._coreUniforms = {
       uScale: { value: 1 },
       uBrightness: { value: 1 },
+      uPixelHeight: { value: 1080 },
     };
     this._haloUniforms = {
       uScale: { value: 1 },
@@ -594,7 +595,9 @@ export class MainScene {
 
     this._coreUniforms.uScale.value = scale;
     this._haloUniforms.uScale.value = scale * 9.0;
-    this._haloUniforms.uPixelHeight.value = this.app.renderer.domElement.height;
+    const pixelHeight = this.app.renderer.domElement.height;
+    this._coreUniforms.uPixelHeight.value = pixelHeight;
+    this._haloUniforms.uPixelHeight.value = pixelHeight;
 
     this.light.intensity = p.power * beat;
   }
@@ -641,16 +644,37 @@ function mulberry32(seed) {
   };
 }
 
+// Jádro menší než pár pixelů by rasterizér podle pohybu kamery trefoval
+// a míjel a roj by blikal – u jádra víc než u hala, protože je nad prahem
+// bloomu a ten každé problesknutí rozmaže do skvrny.
+//
+// Zvětšit ho a ztlumit (jako halo) nejde: jádro je neprůhledné, takže ztlumené
+// tmavé kolečko zakrývá záři své i okolních hvězd. Naměřeno na 60 000 tělesech:
+// jas scény klesl z 92 na 28 (min 1,5 px) a na 3 (min 3 px).
+//
+// Pod hranicí se proto jádro nekreslí vůbec (nulová velikost = žádné pixely)
+// a hvězdu zastoupí halo, které má vlastní jasný střed a je proti blikání
+// ošetřené. Jádro se tak ukáže až tam, kde je opravdu rozlišitelné.
 const CORE_VERTEX = `
 attribute vec3 aOffset;
 attribute vec3 aTint;
 attribute float aSize;
 uniform float uScale;
+uniform float uPixelHeight;
 varying vec3 vTint;
+
+const float MIN_CORE_PIXELS = 1.5; // poloměr na obrazovce
 
 void main() {
   vTint = aTint;
-  vec3 world = position * (uScale * aSize) + aOffset;
+
+  float scale = uScale * aSize;
+  vec4 center = modelViewMatrix * vec4(aOffset, 1.0);
+  float depth = max(-center.z, 1e-6);
+  float pixels = scale * projectionMatrix[1][1] / depth * uPixelHeight * 0.5;
+
+  float visible = step(MIN_CORE_PIXELS, pixels);
+  vec3 world = position * (scale * visible) + aOffset;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
 }
 `;

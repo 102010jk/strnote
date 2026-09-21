@@ -1,6 +1,6 @@
 {
   "name": "strnote",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "private": true,
   "type": "module",
   "description": "Roj hvězd v three.js, servírovaný staticky z GitHub Pages bez build kroku.",

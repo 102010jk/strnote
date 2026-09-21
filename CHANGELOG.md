@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 – 2026-09-21
+
+Opraveno silné blikání roje při oddálení, které přišlo s 1.5.0. Vzdálené
+hvězdy teď kreslí jen svou záři a pevné jádro se ukáže až zblízka, kde je
+opravdu vidět. Blikání kleslo zhruba desetkrát a galaxie přitom nepotemněla.
+
 ## 1.5.0 – 2026-09-21
 
 Do políček u posuvníků jde napsat jakékoliv číslo – i víc, než kam dosáhne

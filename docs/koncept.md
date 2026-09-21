@@ -178,25 +178,27 @@ Roj není prototyp k zahození, nese se dál:
 
   | Co | ms/snímek |
   |---|---|
-  | prázdná scéna (1 těleso) | 0,13 |
-  | 1000 těles, detail 12×8 | 0,19 |
-  | 1000 těles, detail 48×32 (3 M trojúhelníků) | 0,19 |
-  | z toho bloom | 0,07 |
+  | prázdná scéna (1 těleso) | 0,22–0,38 |
+  | 1000 těles, detail 12×8 | 0,25–0,28 |
+  | 1000 těles, detail 48×32 (3 M trojúhelníků) | 0,67–0,72 |
 
-  Celá 3D scéna tedy stojí **zhruba 1 % rozpočtu na 60 fps**. Zbylých 99 %
-  je volných na to, co aplikace teprve bude dělat.
+  Celá 3D scéna tedy stojí **zhruba 2–4 % rozpočtu na 60 fps** podle detailu.
+  Zbytek je volný na to, co aplikace teprve bude dělat.
+
+  > Oprava: dřív tu stálo „1 %" a že plný detail je zdarma. To bylo změřené
+  > v době, kdy se jádra těles kvůli chybě vůbec nekreslila (1.3.0–1.4.1),
+  > takže tři miliony trojúhelníků měly nulovou plochu. Viz docs/instancing.md.
 
   Dva důsledky pro stavbu:
 
-  - **Zjednodušování geometrie nemá pod ~20 000 tělesy smysl.** Tři miliony
-    trojúhelníků stojí stejně jako sto sedmdesát tisíc – úzké hrdlo je bloom
-    přes celou obrazovku, ne geometrie. Tělesa můžou být dokonale kulatá;
-    stupně detailu v `_setDetail` jsou nastavené pro stotisícový test
-    a při skutečném počtu zbytečně ubírají na kvalitě.
+  - **Kulatá tělesa si dovolit jde, jen ne zadarmo.** Plný detail 48×32 je
+    asi 2,6× dražší než 12×8, pořád ale jen 0,7 ms z 16,6. Stupně detailu
+    v `_setDetail` jsou nastavené pro stotisícový test a při skutečném počtu
+    zbytečně ubírají na kvalitě – pro zápisník je lepší je posunout nahoru.
   - **Planety můžou být opravdu osvětlené svou hvězdou** místo ploché šedé.
     Přesně ten vzhled, co má Universe Sandbox: přisvícená strana, terminátor,
     stín. Při tisícovce těles a hrstce světel je to v rozpočtu bez problému.
-    Teď jsou ploché jen proto, že sto tisíc stínovaných koulí by nedávalo smysl.
+
 - **Hierarchie a planety** jsou přesně ta struktura, kterou zápisník potřebuje:
   hvězda jako téma, planety jako zápisky pod ním, měsíce jako poznámky k nim.
 - **Odpojená kamera** je základ pro „doleť k tomuhle zápisku" – hledání bude

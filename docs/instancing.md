@@ -11,6 +11,12 @@ Celý roj jsou **dva** instancované meshe:
 - `cores` – koule, tvrdé jádro tělesa
 - `halos` – placka natočená k obrazovce, na ní se počítá záře
 
+> **Pozor na čísla z verzí 1.3.0 až 1.4.1:** v té době se jádra těles vůbec
+> nekreslila (viz „Chyba, která schovala jádra" níž), takže měření jim
+> nepřičítala nic. Při 100 000 tělesech to skoro nevadí – tam převažuje halo
+> a jádra mají 6×4 segmentů; přeměřeno s opravou vychází planety na 7,55 ms.
+> Při malých počtech s vysokým detailem to ale zkreslovalo hodně, viz níž.
+
 Naměřeno (desktop, 1622×914, celý roj v záběru), 100 000 těles ve všech režimech:
 
 | Typ oběhu | ms/snímek | fps | draw cally |
@@ -54,9 +60,68 @@ takže při jednom tělese neputuje na GPU buffer pro sto tisíc.
 | ≤ 20 000 | 8 × 6 |
 | výš | 6 × 4 |
 
-Při sto tisících je těleso pár pixelů velké, šest segmentů nikdo nepozná.
-Mění se jen `attributes` a `index` instancované geometrie; stará se hned potom
-uvolní, jinak by její buffery zůstaly viset na GPU.
+Každá úroveň má **vlastní předem postavenou instancovanou geometrii** a přepnutí
+je jen výměna `cores.geometry`. Nic se při tom nealokuje ani neuvolňuje.
+
+Detail stojí, i když méně, než by se čekalo. Při 1000 tělesech:
+
+| Detail | trojúhelníků | ms/snímek |
+|---|---|---|
+| 12 × 8 | 170 000 | 0,25–0,28 |
+| 48 × 32 | 2 980 000 | 0,67–0,72 |
+
+Plný detail je tedy asi 2,6× dražší, ale pořád jen ~4 % rozpočtu na 60 fps.
+
+## Chyba, která schovala jádra (1.3.0 – 1.4.1)
+
+Tohle stojí za zapamatování, protože se to dá snadno udělat znovu.
+
+`_instanced()` původně dělal `geometry.attributes = source.attributes`. To
+**nekopíruje** – obě geometrie pak sdílejí tentýž objekt a `setAttribute`
+zapíše instanční atributy i do zdroje. Při startu pak `_setDetail()` přiřadil
+jádrům atributy čerstvé koule, které `aOffset`, `aTint` ani `aSize` neměly.
+
+Shader dostal pro chybějící atributy výchozí nuly: všechna jádra se sesypala
+do počátku s nulovou velikostí a černou barvou. Nebylo to poznat, protože halo
+má vlastní vypočtené jádro a to vypadalo jako celá hvězda. Ověřeno schováním
+hala – střed obrazovky byl `(0, 0, 1)`, po opravě `(222, 227, 234)`.
+
+Vedlejší škody, teď opravené:
+
+- **Měření lhala.** Degenerované trojúhelníky s nulovou plochou GPU zahodí
+  skoro bez práce, takže „3 miliony trojúhelníků stojí stejně jako 170 tisíc"
+  byl artefakt chyby, ne vlastnost scény.
+- **„Oprava" úniku bufferů nic nedělala.** Uvolňovala se zdrojová geometrie,
+  jenže ta se nikdy nekreslila, takže na GPU nic neměla. Skutečně pustit buffer
+  jde v three.js jen přes `dispose()` geometrie, která se kreslila.
+
+Oprava: `_instanced()` přidává atributy jednotlivě přes `setAttribute`
+a detail se přepíná výměnou celé geometrie, ne jejích atributů.
+
+## Počet těles bez horní hranice
+
+Posuvník jde do 100 000, ale do políčka se dá napsat cokoliv. Když číslo
+přesáhne kapacitu, `_setCapacity()` ji zvětší:
+
+1. naalokuje nová pole **bokem** a přiřadí je, až když se povedou všechna,
+2. přepočítá dráhy a barvy pro novou kapacitu,
+3. vytvoří nové instanční atributy a nové geometrie,
+4. staré geometrie uvolní přes `dispose()` – to smaže i jejich buffery na GPU.
+
+Roste se po skocích aspoň 1,5×, ať se při psaní čísla nealokuje pořád dokola.
+Kapacita jen roste, nikdy neklesá.
+
+Když na to prohlížeči nestačí paměť, `Float32Array` hodí `RangeError`; ten se
+chytí, stará kapacita zůstane a scéna jede dál s tolika tělesy, kolik se vešlo.
+Políčko pak ukáže skutečný počet. Ověřeno: `1e10` těles se nevejde
+(„Invalid typed array length"), scéna zůstala na 250 000 bez pádu.
+
+Ověřeno taky, že se staré buffery opravdu uvolňují: počet geometrií na GPU
+zůstal na 4 přes tři zvětšení kapacity až na 900 000.
+
+Při velkých číslech počítej s tím, že se to začne vléct – každé zvětšení
+znamená jednorázový přepočet (250 000 těles ~80 ms) a sto tisíc těles už
+bere půlku rozpočtu na snímek. Horní hranice tam záměrně není; je to test.
 
 ## Záře se počítá, nekreslí se z obrázku
 
@@ -84,7 +149,11 @@ Když kolem hvězdy vidíš měkký čtverec, dělá ho `UnrealBloomPass` – je
 přes mip mapy je při velkém poloměru hranaté. Vlastní záře je dokonale kulatá
 (ověřeno s vypnutým bloomem). Řeší se to nižším „Rozptylem záře" a vyšším
 „Prahem záře", aby bloom chytal jen horké jádro; zbytek doběhu dělá shader.
-Výchozí hodnoty jsou nastavené takhle.
+
+Práh je výchozí **1,3**, tedy nad 1. Dává to smysl, protože scéna se kreslí
+v HDR a plná jádra jdou až na jas 1,8. Dokud se jádra kvůli chybě nekreslila,
+stačilo 0,55; s viditelnými jádry dělal takový práh z každé jasné hvězdy
+hranatou skvrnu. Při 0,9 byly čtverce pořád vidět, při 1,3 zmizely.
 
 ## Blikání při oddálení
 

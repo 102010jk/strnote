@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 
-const MAX_ORBS = 100000;
+// Výchozí kapacita a rozsah posuvníku. Napsat se dá i víc – kapacita pak
+// doroste (viz _setCapacity), dokud na to prohlížeči stačí paměť.
+const DEFAULT_CAPACITY = 100000;
+
+// Detail koule podle počtu těles. Každá úroveň má vlastní předem postavenou
+// geometrii, přepnutí je jen výměna ukazatele – nic se nealokuje ani neuvolňuje.
+const DETAIL_LEVELS = [
+  { upTo: 32, segments: [48, 32] },
+  { upTo: 256, segments: [24, 16] },
+  { upTo: 2000, segments: [12, 8] },
+  { upTo: 20000, segments: [8, 6] },
+  { upTo: Infinity, segments: [6, 4] },
+];
 
 export const ORBIT_MODES = { SPHERE: 0, DISC: 1, HIERARCHY: 2, PLANETS: 3 };
 export const GLOW_MODES = { SOFT: 0, PHYSICAL: 1, STAR: 2 };
@@ -34,9 +46,11 @@ export class MainScene {
       size: 0.85,
       power: 220,
       reach: 30,
-      glow: 0.7,
+      glow: 0.6,
       spread: 0.3,
-      cutoff: 0.55,
+      // nad 1: scéna je v HDR a jádra jdou až na 1,8, bloom tak chytí jen
+      // nejžhavější střed. Při 0,55 z plných jader dělal hranaté skvrny.
+      cutoff: 1.3,
       pulse: 0.25,
       exposure: 1.05,
       floor: true,
@@ -47,16 +61,10 @@ export class MainScene {
     this._disposables = [];
     this._pulseTime = 0;
     this._orbitTime = 0;
-    this._detail = null;
+    this._detailLevel = -1;
+    this._capacity = 0;
 
-    this._offsets = new Float32Array(MAX_ORBS * 3);
-    this._tints = new Float32Array(MAX_ORBS * 3);
-    this._sizes = new Float32Array(MAX_ORBS);
-    this._px = new Float32Array(MAX_ORBS);
-    this._py = new Float32Array(MAX_ORBS);
-    this._pz = new Float32Array(MAX_ORBS);
-
-    this._allocateOrbits();
+    this._allocate(DEFAULT_CAPACITY);
     this._buildOrbits(this.params.orbitMode);
     this._buildSwarm();
     this._buildFloor();
@@ -69,18 +77,62 @@ export class MainScene {
     this._disposables.push(...objects);
   }
 
-  _allocateOrbits() {
-    this._ux = new Float32Array(MAX_ORBS);
-    this._uy = new Float32Array(MAX_ORBS);
-    this._uz = new Float32Array(MAX_ORBS);
-    this._vx = new Float32Array(MAX_ORBS);
-    this._vy = new Float32Array(MAX_ORBS);
-    this._vz = new Float32Array(MAX_ORBS);
-    this._radius = new Float32Array(MAX_ORBS);
-    this._angularSpeed = new Float32Array(MAX_ORBS);
-    this._phase = new Float32Array(MAX_ORBS);
-    this._parent = new Int32Array(MAX_ORBS);
-    this._isPlanet = new Uint8Array(MAX_ORBS);
+  /**
+   * Všechna pole na jedno těleso. Staví se nejdřív bokem a přiřadí se, až když
+   * se povedou všechna – když dojde paměť, zůstane stará kapacita beze změny.
+   */
+  _allocate(capacity) {
+    const next = {
+      _offsets: new Float32Array(capacity * 3),
+      _tints: new Float32Array(capacity * 3),
+      _sizes: new Float32Array(capacity),
+      _px: new Float32Array(capacity),
+      _py: new Float32Array(capacity),
+      _pz: new Float32Array(capacity),
+      _ux: new Float32Array(capacity),
+      _uy: new Float32Array(capacity),
+      _uz: new Float32Array(capacity),
+      _vx: new Float32Array(capacity),
+      _vy: new Float32Array(capacity),
+      _vz: new Float32Array(capacity),
+      _radius: new Float32Array(capacity),
+      _angularSpeed: new Float32Array(capacity),
+      _phase: new Float32Array(capacity),
+      _parent: new Int32Array(capacity),
+      _isPlanet: new Uint8Array(capacity),
+    };
+
+    Object.assign(this, next);
+    this._capacity = capacity;
+  }
+
+  /**
+   * Doroste kapacita, když někdo napíše víc těles, než je naalokováno.
+   * Vrací skutečně dosaženou kapacitu – když na to prohlížeči nestačí paměť,
+   * zůstane ta stará a scéna jede dál.
+   */
+  _setCapacity(requested) {
+    if (requested <= this._capacity) return this._capacity;
+
+    // růst po větších skocích, ať se při psaní čísla nealokuje pořád dokola
+    const attempts = [...new Set([Math.max(requested, Math.ceil(this._capacity * 1.5)), requested])];
+
+    for (const capacity of attempts) {
+      try {
+        this._allocate(capacity);
+      } catch (error) {
+        console.warn(`[strnote] ${capacity} těles se do paměti nevejde`, error);
+        continue;
+      }
+
+      this._buildOrbits(this.params.orbitMode);
+      this._buildColors();
+      this._createAttributes();
+      this._buildGeometries();
+      return this._capacity;
+    }
+
+    return this._capacity;
   }
 
   /**
@@ -91,6 +143,7 @@ export class MainScene {
    * Uprostřed scény samotné nic nestojí – všechna tělesa mají nenulový poloměr.
    */
   _buildOrbits(mode) {
+    const capacity = this._capacity;
     const random = mulberry32(0x5f37);
     const golden = Math.PI * (3 - Math.sqrt(5));
 
@@ -106,10 +159,10 @@ export class MainScene {
       return;
     }
 
-    const depth = new Uint8Array(MAX_ORBS);
-    const roots = Math.max(1, Math.round(MAX_ORBS * 0.004));
+    const depth = new Uint8Array(capacity);
+    const roots = Math.max(1, Math.round(capacity * 0.004));
 
-    for (let i = 0; i < MAX_ORBS; i++) {
+    for (let i = 0; i < capacity; i++) {
       let radius;
       let parent = -1;
 
@@ -118,7 +171,7 @@ export class MainScene {
         const theta = golden * i;
         u.set(Math.cos(theta), 0, Math.sin(theta));
         v.set(-Math.sin(theta), 0, Math.cos(theta));
-        radius = Math.sqrt((i + 0.5) / MAX_ORBS);
+        radius = Math.sqrt((i + 0.5) / capacity);
       } else if (mode === ORBIT_MODES.HIERARCHY) {
         // každé těleso obíhá nějaké dřívější
         randomPlane(u, v, random);
@@ -133,12 +186,12 @@ export class MainScene {
         }
       } else {
         // koule: směry Fibonacciho spirálou, poloměr přes třetí odmocninu
-        const y = 1 - (i / (MAX_ORBS - 1)) * 2;
+        const y = 1 - (i / (capacity - 1)) * 2;
         const ring = Math.sqrt(Math.max(1 - y * y, 0));
         const theta = golden * i;
         u.set(Math.cos(theta) * ring, y, Math.sin(theta) * ring).normalize();
         perpendicular(u, v);
-        radius = Math.cbrt((i + 0.5) / MAX_ORBS);
+        radius = Math.cbrt((i + 0.5) / capacity);
       }
 
       this._write(i, u, v, radius, parent);
@@ -149,16 +202,17 @@ export class MainScene {
 
   /** Hvězda a k ní 0 až 9 planet, které obíhají ji. */
   _buildPlanetSystems(random, u, v) {
+    const capacity = this._capacity;
     let i = 0;
 
-    while (i < MAX_ORBS) {
+    while (i < capacity) {
       const star = i++;
 
       randomPlane(u, v, random);
       this._write(star, u, v, Math.cbrt(random()), -1);
       this._sizes[star] = 1;
 
-      const planets = Math.min(Math.floor(random() * 10), MAX_ORBS - i);
+      const planets = Math.min(Math.floor(random() * 10), capacity - i);
 
       for (let k = 0; k < planets; k++) {
         const index = i++;
@@ -199,7 +253,7 @@ export class MainScene {
     const color = new THREE.Color();
     const tints = this._tints;
 
-    for (let i = 0; i < MAX_ORBS; i++) {
+    for (let i = 0; i < this._capacity; i++) {
       const o = i * 3;
 
       if (this._isPlanet[i]) {
@@ -221,11 +275,6 @@ export class MainScene {
   }
 
   _buildSwarm() {
-    this._offsetAttribute = new THREE.InstancedBufferAttribute(this._offsets, 3);
-    this._offsetAttribute.setUsage(THREE.DynamicDrawUsage);
-    this._tintAttribute = new THREE.InstancedBufferAttribute(this._tints, 3);
-    this._sizeAttribute = new THREE.InstancedBufferAttribute(this._sizes, 1);
-
     this._coreUniforms = {
       uScale: { value: 1 },
       uBrightness: { value: 1 },
@@ -258,12 +307,17 @@ export class MainScene {
 
     this._track(coreMaterial, haloMaterial);
 
-    this._coreSource = new THREE.SphereGeometry(1, 8, 6);
-    this.cores = new THREE.Mesh(this._instanced(this._coreSource), coreMaterial);
+    this._coreSources = DETAIL_LEVELS.map(({ segments: [w, h] }) => new THREE.SphereGeometry(1, w, h));
+    this._haloSource = new THREE.PlaneGeometry(2, 2);
+
+    this._createAttributes();
+    this._buildGeometries();
+
+    this.cores = new THREE.Mesh(this._coreGeometries[0], coreMaterial);
     this.cores.frustumCulled = false;
     this.group.add(this.cores);
 
-    this.halos = new THREE.Mesh(this._instanced(new THREE.PlaneGeometry(2, 2)), haloMaterial);
+    this.halos = new THREE.Mesh(this._haloGeometry, haloMaterial);
     this.halos.frustumCulled = false;
     this.halos.renderOrder = 1;
     this.group.add(this.halos);
@@ -274,38 +328,61 @@ export class MainScene {
     this.group.add(this.light);
   }
 
-  /** Udělá z běžné geometrie instancovanou se sdílenými atributy. */
+  _createAttributes() {
+    this._offsetAttribute = new THREE.InstancedBufferAttribute(this._offsets, 3);
+    this._offsetAttribute.setUsage(THREE.DynamicDrawUsage);
+    this._tintAttribute = new THREE.InstancedBufferAttribute(this._tints, 3);
+    this._sizeAttribute = new THREE.InstancedBufferAttribute(this._sizes, 1);
+  }
+
+  /**
+   * Instancované geometrie: jedna na každou úroveň detailu jádra a jedna pro halo,
+   * všechny nad stejnými instančními atributy.
+   *
+   * Staré se uvolní až po přepojení meshů. Dispose instancované geometrie je
+   * jediná veřejná cesta, jak three.js buffer na GPU skutečně pustit – uvolnit
+   * zdrojovou geometrii nestačí, ta se nikdy nekreslila, takže na GPU nic nemá.
+   */
+  _buildGeometries() {
+    const previous = [...(this._coreGeometries ?? []), this._haloGeometry].filter(Boolean);
+
+    this._coreGeometries = this._coreSources.map((source) => this._instanced(source));
+    this._haloGeometry = this._instanced(this._haloSource);
+
+    if (this.cores) this.cores.geometry = this._coreGeometries[Math.max(this._detailLevel, 0)];
+    if (this.halos) this.halos.geometry = this._haloGeometry;
+
+    for (const geometry of previous) geometry.dispose();
+  }
+
+  /**
+   * Instancovaná geometrie nad zdrojovou. Atributy se přidávají jednotlivě –
+   * přiřadit celý objekt `attributes` by ho sdílelo se zdrojem a instanční
+   * atributy by se zapisovaly do něj. Přesně tahle chyba schovala jádra
+   * všech těles od verze 1.3.0 do 1.4.1.
+   */
   _instanced(source) {
     const geometry = new THREE.InstancedBufferGeometry();
-    geometry.index = source.index;
-    geometry.attributes = source.attributes;
+    geometry.setIndex(source.index);
+
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+      geometry.setAttribute(name, attribute);
+    }
+
     geometry.setAttribute('aOffset', this._offsetAttribute);
     geometry.setAttribute('aTint', this._tintAttribute);
     geometry.setAttribute('aSize', this._sizeAttribute);
-    geometry.instanceCount = this.params.count;
+    geometry.instanceCount = 0;
     return geometry;
   }
 
   /** Míň trojúhelníků na tělese, když jich je na scéně hodně. */
   _setDetail(count) {
-    const detail =
-      count <= 32 ? [48, 32]
-      : count <= 256 ? [24, 16]
-      : count <= 2000 ? [12, 8]
-      : count <= 20000 ? [8, 6]
-      : [6, 4];
+    const level = DETAIL_LEVELS.findIndex((entry) => count <= entry.upTo);
+    if (level === this._detailLevel) return;
 
-    if (this._detail && this._detail[0] === detail[0]) return;
-    this._detail = detail;
-
-    const previous = this._coreSource;
-    this._coreSource = new THREE.SphereGeometry(1, detail[0], detail[1]);
-
-    this.cores.geometry.index = this._coreSource.index;
-    this.cores.geometry.attributes = this._coreSource.attributes;
-
-    // až teď – dispose uvolní buffery staré geometrie na GPU
-    previous?.dispose();
+    this._detailLevel = level;
+    this.cores.geometry = this._coreGeometries[level];
   }
 
   _buildFloor() {
@@ -328,9 +405,13 @@ export class MainScene {
 
     return [
       {
-        id: 'count', label: 'Počet těles', min: 1, max: MAX_ORBS, step: 1,
+        id: 'count', label: 'Počet těles', min: 1, max: DEFAULT_CAPACITY, step: 1,
         get: () => p.count,
-        set: (v) => { p.count = Math.round(v); this._setDetail(p.count); },
+        set: (v) => {
+          const wanted = Math.max(0, Math.round(v));
+          p.count = Math.min(wanted, this._setCapacity(wanted));
+          this._setDetail(p.count);
+        },
       },
       {
         id: 'orbitMode', label: 'Typ oběhu', type: 'select',
@@ -362,7 +443,7 @@ export class MainScene {
         id: 'camera', label: 'Kamera', type: 'select', raw: true,
         options: [
           { value: 'centered', label: 'Na střed' },
-          { value: 'detached', label: 'Odpojená (posuv myší)' },
+          { value: 'detached', label: 'Odpojená (kolečko = let)' },
         ],
         get: () => p.camera,
         set: (v) => { p.camera = v; this.app.setCameraMode(v); },
@@ -423,7 +504,7 @@ export class MainScene {
         set: (v) => { p.spread = v; this.app.bloom.radius = v; },
       },
       {
-        id: 'cutoff', label: 'Práh záře', min: 0, max: 1, step: 0.01,
+        id: 'cutoff', label: 'Práh záře', min: 0, max: 2.5, step: 0.01,
         get: () => p.cutoff,
         set: (v) => { p.cutoff = v; this.app.bloom.threshold = v; },
       },
@@ -520,9 +601,8 @@ export class MainScene {
 
   dispose() {
     this.group.removeFromParent();
-    this._coreSource?.dispose();
-    this.cores.geometry.dispose();
-    this.halos.geometry.dispose();
+    for (const geometry of [...this._coreGeometries, this._haloGeometry]) geometry.dispose();
+    for (const source of [...this._coreSources, this._haloSource]) source.dispose();
     for (const item of this._disposables) item.dispose();
     this._disposables.length = 0;
   }

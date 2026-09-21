@@ -1,6 +1,6 @@
 // Service worker: web funguje i offline a po instalaci na plochu startuje okamžitě.
 // V nativním obalu (Capacitor) se neregistruje – tam jsou soubory lokálně už tak.
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 const CACHE = `strnote-${VERSION}`;
 const CDN = 'https://cdn.jsdelivr.net/';
 

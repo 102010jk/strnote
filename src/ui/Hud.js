@@ -132,23 +132,31 @@ function rangeInputs(control, head) {
   range.step = control.step;
   range.value = control.get();
 
+  // Políčko nemá min ani max: posuvník drží rozumný rozsah na tažení,
+  // napsat se dá cokoliv. Prohlížeč jinak hlásí „hodnota musí být ≤ …"
+  // a šipky se zastaví na kraji posuvníku.
   const number = document.createElement('input');
   number.type = 'number';
   number.className = 'field__value';
   number.dataset.controlNumber = control.id;
-  number.min = control.min;
-  number.max = control.max;
-  number.step = control.step;
+  number.step = 'any';
   number.value = format(control.get());
   head.append(number);
 
   const apply = (raw, source) => {
-    const value = clamp(Number(raw), control.min, control.max);
-    if (!Number.isFinite(value)) return;
+    const value = Number(raw);
+    if (raw === '' || !Number.isFinite(value)) {
+      number.value = format(control.get()); // prázdné nebo nesmysl = vrátit, co platí
+      return;
+    }
 
     control.set(value);
-    if (source !== range) range.value = String(value);
-    if (source !== number) number.value = format(value);
+
+    // ukázat, co se opravdu nastavilo – počet se zaokrouhlí na celé
+    // a nemusí se vejít do paměti, pak zůstane menší
+    const applied = control.get();
+    if (source !== range) range.value = String(applied);
+    number.value = format(applied);
   };
 
   range.addEventListener('input', () => apply(range.value, range));
@@ -166,6 +174,3 @@ function rangeInputs(control, head) {
   return [range];
 }
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}

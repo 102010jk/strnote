@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 – 2026-09-21
+
+Do políček u posuvníků jde napsat jakékoliv číslo – i víc, než kam dosáhne
+posuvník, i záporné (například záporná rychlost oběhu točí roj opačně).
+Počet těles nemá horní hranici; když se nevejde do paměti, zůstane tolik,
+kolik se vešlo, a políčko to ukáže.
+
+Opraveno: od verze 1.3.0 se tělesům nekreslilo pevné jádro, viditelná byla
+jen záře kolem. Hvězdy teď mají zase jasný střed a planety jsou konečně
+vidět jako šedé kuličky. Záře kolem jasných hvězd už nemá hranaté okraje.
+
 ## 1.4.1 – 2026-09-21
 
 V odpojené kameře kolečko myši letí, místo aby přibližovalo. Kamera se posune

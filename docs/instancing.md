@@ -44,6 +44,11 @@ Tady stačí tři atributy, proto se místo něj používá `InstancedBufferGeom
 | `aOffset` (vec3) | poloha | každý snímek |
 | `aTint` (vec3) | barva | při změně nastavení |
 | `aSize` (float) | měřítko vůči hvězdě | při změně typu oběhu |
+| `aKind` (float) | hvězda, nebo materiál planety | při změně typu oběhu |
+| `aLight` (vec3) | poloha hvězdy, která planetu osvětluje | každý snímek, jen v režimu planet |
+| `aLightColor` (vec3) | barva té hvězdy | při změně barev |
+
+Planety a jejich osvětlení podrobně: [planety.md](planety.md).
 
 Každý snímek tak putuje na GPU jen `aOffset`: při 100 000 tělesech **1,2 MB
 místo 6,4 MB**. Oba meshe sdílejí tytéž atributy, takže se počítají i nahrávají

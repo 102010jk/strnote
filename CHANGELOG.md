@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0 – 2026-09-21
+
+Planety už nejsou šedé kuličky. Každá má materiál – kámen, trávu, železo
+nebo vodu – a podle něj barvu i povrch: zelené pevniny, rezavý kov, modrý
+oceán s odleskem. Osvětluje je jejich hvězda, takže mají denní a noční stranu
+a světlo má barvu té hvězdy. Nový posuvník „Osvětlení planet" řídí jejich jas.
+
+Planety teď obíhají v bezpečné vzdálenosti od své hvězdy, seřazené od ní;
+dřív se při velké hvězdě dostaly až pod její povrch.
+
+Jak to funguje: [docs/planety.md](docs/planety.md).
+
 ## 1.5.3 – 2026-09-21
 
 Opraveno: po nasazení se nová verze mohla ukazovat až za deset minut,

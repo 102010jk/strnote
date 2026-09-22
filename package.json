@@ -1,6 +1,6 @@
 {
   "name": "strnote",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "private": true,
   "type": "module",
   "description": "Replika sluneční soustavy v three.js, servírovaná staticky z GitHub Pages bez build kroku.",

@@ -99,6 +99,43 @@ drah je pořád 3).
 
 Stávající tělesa si nechají indexy, takže sledování kamerou nepřeskočí.
 
+## Mazání (1.7.3)
+
+- **Kliknutí → „smaže těleso"**: klik na těleso ho smaže. Klik do prázdna
+  řekne, že tu nic není.
+- **`Delete`** smaže těleso, které se právě sleduje.
+- **„Smazat všechno"** smaže celou scénu včetně Slunce – dá se pak stavět
+  vlastní soustava od nuly. Potvrzuje se druhým kliknutím do 3 s; bez něj
+  se tlačítko samo vrátí. Obnovení stránky vrátí sluneční soustavu.
+
+Smazání tělesa **smaže i všechno, co kolem něj obíhá** – měsíc bez planety
+nemá kolem čeho obíhat, planeta bez hvězdy taky ne. Smazání Země smaže
+i Měsíc a zpráva řekne kolik: *„Smazáno: Země a 1 těleso, které kolem
+obíhalo."* Potomek má v seznamu vždycky vyšší index než rodič, takže stačí
+jeden průchod.
+
+> **Pro zápisník takhle mazání zůstat nemůže.** Smazání tématu (hvězdy)
+> nesmí potichu smazat všechny zápisky pod ním. Až budou tělesa nést obsah,
+> potřebuje mazání rodiče potvrzení s výčtem, co zmizí, a krok zpět –
+> nebo potomky přesunout, ne smazat.
+
+### Indexy se po smazání posunou
+
+Tělesa jsou v polích za sebou, takže po smazání se posunou indexy všech
+za ním. Kvůli tomu:
+
+- **sledování kamerou jde podle `id`**, ne podle indexu (`bodyTracker`).
+  Ověřeno: při sledování Jupiteru a smazání Země zůstal Jupiter přesně
+  uprostřed obrazovky (0 px); se sledováním podle indexu by kamera
+  přeskočila na Saturn.
+- **kružnice drah a prstence se staví znovu** (`_rebuildGuides`) – odkazují
+  na indexy rodičů. Je jich pár, takže je to okamžité.
+- Klávesa `Delete` si pamatuje `id` sledovaného tělesa, ne index.
+
+Ověřeno, že se nic nehromadí na GPU: v přehledu (kde se kreslí všechny
+dráhy) je po každém smazání geometrií přesně 2 + dráhy + prstence
+(10 → 9 → 8 → 7). Prázdná scéna se vykreslí bez chyby WebGL.
+
 ## Na co se narazilo
 
 - **Schované ovladače byly vidět.** Atribut `hidden` má ve výchozím stylu
@@ -111,6 +148,6 @@ Stávající tělesa si nechají indexy, takže sledování kamerou nepřeskoč�
 
 - **Nic se neukládá** – po obnovení stránky vytvořená tělesa zmizí.
   Souvisí s otevřenou otázkou, kam ukládat data (docs/koncept.md).
-- **Mazání a krok zpět.**
+- **Krok zpět** – smazané se nedá vrátit (kromě obnovení celé stránky).
 - **Sklon dráhy** – všechno vzniká rovnoběžně s ekliptikou.
 - **Hvězdy se nehýbou** a tělesa se můžou překrývat, nic nekontroluje srážky.

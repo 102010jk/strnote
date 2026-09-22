@@ -143,6 +143,7 @@ export class MainScene {
 
     this.list = list;
     this.count = count;
+    this._indexOf = indexOf;
 
     // polohy a dráhy ve float64 – v float32 by Neptun měl přesnost 2 % poloměru
     this._px = new Float64Array(count);
@@ -338,12 +339,11 @@ export class MainScene {
       opacity: ORBIT_OPACITY,
       depthWrite: false,
     });
-    this._track(geometry, material);
 
     const line = new THREE.LineLoop(geometry, material);
     line.frustumCulled = false;
     this.bodies.add(line);
-    this._orbitLines.push({ line, material, parent, radius: this._a[i] });
+    this._orbitLines.push({ line, geometry, material, parent, radius: this._a[i] });
   }
 
   /** Prstence u těles, která je mají (Saturn). */
@@ -370,7 +370,6 @@ export class MainScene {
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      this._track(geometry, material);
 
       const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = false;
@@ -386,6 +385,27 @@ export class MainScene {
     });
   }
 
+  /**
+   * Kružnice drah a prstence znovu. Po smazání tělesa se posunou indexy,
+   * na které odkazují, takže je jednodušší je postavit celé znovu (je jich pár).
+   */
+  _rebuildGuides() {
+    for (const { line, geometry, material } of this._orbitLines) {
+      line.removeFromParent();
+      geometry.dispose();
+      material.dispose();
+    }
+    for (const { mesh } of this._rings) {
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+
+    this._orbitLines = [];
+    for (let i = 0; i < this.count; i++) this._addOrbitLine(i);
+    this._buildRings();
+  }
+
   _describeControls() {
     const p = this.params;
 
@@ -395,12 +415,13 @@ export class MainScene {
     return [
       { type: 'heading', label: 'Tvoření' },
       {
-        id: 'create', label: 'Klik vytvoří', type: 'select', raw: true,
+        id: 'create', label: 'Kliknutí', type: 'select', raw: true,
         options: [
-          { value: 'none', label: 'nic (klik = sledovat těleso)' },
-          { value: 'planet', label: 'planetu' },
-          { value: 'moon', label: 'měsíc' },
-          { value: 'star', label: 'hvězdu' },
+          { value: 'none', label: 'sleduje těleso' },
+          { value: 'planet', label: 'vytvoří planetu' },
+          { value: 'moon', label: 'vytvoří měsíc' },
+          { value: 'star', label: 'vytvoří hvězdu' },
+          { value: 'delete', label: 'smaže těleso' },
         ],
         get: () => p.create,
         set: (v) => { p.create = v; },
@@ -464,6 +485,14 @@ export class MainScene {
         id: 'starTemperature', label: 'Teplota (K)', min: 2500, max: 30000, step: 1, log: true, visible: only('star'),
         get: () => p.starTemperature,
         set: (v) => { p.starTemperature = v; },
+      },
+
+      {
+        id: 'clearAll', type: 'button', label: 'Smazat všechno', danger: true,
+        confirm: 'Opravdu smazat vše?',
+        action: () => this.removeAll(),
+        message: (count) =>
+          `Smazáno ${countBodies(count)}. Obnovení stránky vrátí sluneční soustavu.`,
       },
 
       { type: 'heading', label: 'Čas a kamera' },
@@ -651,9 +680,56 @@ export class MainScene {
     }
   }
 
-  /** Je zapnuté tvoření – kliknutí vytvoří těleso místo sledování. */
+  /** Kliknutí dělá něco jiného než sledování (tvoří nebo maže). */
   get creating() {
     return this.params.create !== 'none';
+  }
+
+  get deleting() {
+    return this.params.create === 'delete';
+  }
+
+  /**
+   * Smaže těleso a všechno, co kolem něj obíhá – měsíc bez planety nemá kolem
+   * čeho obíhat. Vrací jména smazaných těles, první je to, na které se kliklo.
+   *
+   * Pro zápisník takhle mazání zůstat nemůže: smazání tématu nesmí potichu
+   * smazat zápisky pod ním. Viz docs/tvoreni.md.
+   */
+  removeBody(index) {
+    if (index < 0 || index >= this.count) return [];
+
+    const removed = new Set([index]);
+    // potomek má vždycky vyšší index než rodič, stačí jeden průchod
+    for (let i = index + 1; i < this.count; i++) {
+      if (removed.has(this._parent[i])) removed.add(i);
+    }
+
+    const names = [...removed].map((i) => this.list[i].name);
+    this._replaceBodies(this.list.filter((_, i) => !removed.has(i)));
+    return names;
+  }
+
+  /** Smaže všechno včetně Slunce. Obnovení stránky vrátí sluneční soustavu. */
+  removeAll() {
+    const count = this.count;
+    this._replaceBodies([]);
+    return count;
+  }
+
+  _replaceBodies(list) {
+    this._setBodies(list);
+    this._buildInstances();
+    this._rebuildGuides();
+    this.update(0);
+  }
+
+  idOf(index) {
+    return this.list[index]?.id;
+  }
+
+  indexOfId(id) {
+    return this._indexOf.get(id) ?? -1;
   }
 
   /**
@@ -695,6 +771,7 @@ export class MainScene {
   _spawnPlanet(point) {
     const p = this.params;
     const star = this._nearest(point, (i) => this.list[i].material === 'star');
+    if (star < 0) return { error: 'Není kolem čeho obíhat – nejdřív vytvoř hvězdu.' };
     const distance = point.distanceTo(this._positionOf(star));
 
     if (distance < this._sizes[star] * 2) {
@@ -877,9 +954,13 @@ export class MainScene {
 
   /** Funkce pro kameru: aktuální poloha tělesa, nebo null, když už není. */
   bodyTracker(index) {
+    // podle id, ne indexu – po smazání jiného tělesa se indexy posunou
+    // a kamera by najednou sledovala něco jiného
+    const id = this.list[index].id;
     return (target) => {
-      if (index >= this.count) return null;
-      return target.set(this._px[index], this._py[index], this._pz[index]);
+      const i = this._indexOf.get(id);
+      if (i === undefined) return null;
+      return target.set(this._px[i], this._py[i], this._pz[i]);
     };
   }
 
@@ -896,6 +977,8 @@ export class MainScene {
 
   dispose() {
     this.group.removeFromParent();
+    this._orbitLines.forEach(({ geometry, material }) => { geometry.dispose(); material.dispose(); });
+    this._rings.forEach(({ mesh }) => { mesh.geometry.dispose(); mesh.material.dispose(); });
     this.cores.geometry.dispose();
     this.halos.geometry.dispose();
     for (const item of this._disposables) item.dispose();
@@ -927,6 +1010,13 @@ function dynamicAttribute(array, size) {
 
 function cloneUniforms(uniforms) {
   return Object.fromEntries(Object.entries(uniforms).map(([key, { value }]) => [key, { value }]));
+}
+
+/** „1 těleso", „3 tělesa", „7 těles". */
+function countBodies(n) {
+  if (n === 1) return '1 těleso';
+  if (n >= 2 && n <= 4) return `${n} tělesa`;
+  return `${n} těles`;
 }
 
 /** Vzdálenost v milionech km, česky. */

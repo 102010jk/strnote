@@ -184,6 +184,26 @@ body.is-creating #scene {
   cursor: crosshair;
 }
 
+.field-button {
+  width: 100%;
+}
+
+.field-button--danger {
+  border-color: rgba(255, 138, 122, 0.35);
+  color: #ffb4a8;
+}
+
+.field-button--danger:hover {
+  background: rgba(255, 138, 122, 0.12);
+}
+
+/* čeká na potvrzení druhým klikem */
+.field-button--armed {
+  background: rgba(255, 138, 122, 0.22);
+  border-color: rgba(255, 138, 122, 0.8);
+  color: #fff;
+}
+
 .panel__section {
   margin: 6px 0 -2px;
   padding-top: 8px;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.3 – 2026-09-22
+
+Tělesa jde mazat. Přepni kliknutí na „smaže těleso" a klikni na to, co má
+zmizet – nebo stiskni `Delete` u tělesa, které sleduješ. Spolu s tělesem
+zmizí i to, co kolem něj obíhalo: smazání Země smaže i Měsíc.
+
+Tlačítko „Smazat všechno" vyčistí celou scénu, i Slunce, a dá se stavět
+vlastní soustava od nuly. Chce potvrzení druhým kliknutím. Obnovení stránky
+vrátí sluneční soustavu.
+
 ## 1.7.2 – 2026-09-21
 
 Dají se tvořit tělesa. V panelu vyber, co má kliknutí vytvořit – planetu,

@@ -18,6 +18,35 @@ export function createHud({ app, scene }) {
     return { control, element };
   });
 
+  // tlačítka s potvrzením: první klik se zeptá, druhý do 3 s provede
+  for (const { control, element } of fields) {
+    if (control.type !== 'button') continue;
+
+    let armed = 0;
+    element.addEventListener('click', () => {
+      if (control.confirm && !armed) {
+        element.textContent = control.confirm;
+        element.classList.add('field-button--armed');
+        armed = setTimeout(() => {
+          armed = 0;
+          element.textContent = control.label;
+          element.classList.remove('field-button--armed');
+        }, 3000);
+        return;
+      }
+
+      clearTimeout(armed);
+      armed = 0;
+      element.textContent = control.label;
+      element.classList.remove('field-button--armed');
+
+      const result = control.action();
+      if (control.message) toast(control.message(result));
+    });
+  }
+
+  let focusedId = null;
+
   // Některé ovladače patří jen k jednomu typu tělesa (`visible`). Stačí to
   // přepočítat po každé změně v panelu – události z polí k němu probublají.
   const refresh = () => {
@@ -59,6 +88,14 @@ export function createHud({ app, scene }) {
   app.onClick((x, y) => {
     const rect = app.canvas.getBoundingClientRect();
 
+    // mazání: kliknutí smaže těleso pod kurzorem
+    if (scene.deleting) {
+      const index = scene.pick(x, y, rect);
+      if (index < 0) toast('Tady není co smazat – klikni přímo na těleso.', true);
+      else toast(describeRemoval(scene.removeBody(index)));
+      return;
+    }
+
     // tvoření: kliknutí vytvoří těleso
     if (scene.creating) {
       const result = scene.spawn(x, y, rect);
@@ -76,6 +113,7 @@ export function createHud({ app, scene }) {
     if (index < 0) return;
 
     app.focusOn(scene.bodyTracker(index), scene.focusDistance(index));
+    focusedId = scene.idOf(index);
     if (focusEl) {
       focusEl.textContent = `${scene.describe(index)} · Esc pustí`;
       focusEl.hidden = false;
@@ -93,6 +131,10 @@ export function createHud({ app, scene }) {
       // Esc nejdřív ukončí tvoření, teprve pak sledování
       if (scene.creating) stopCreating();
       else app.clearFocus();
+    } else if (event.key === 'Delete' && app.focused && focusedId) {
+      // Delete smaže těleso, které se právě sleduje
+      toast(describeRemoval(scene.removeBody(scene.indexOfId(focusedId))));
+      focusedId = null;
     } else if (event.code === 'Space') {
       event.preventDefault();
       toggleMotion();
@@ -117,6 +159,15 @@ export function createHud({ app, scene }) {
   });
 }
 
+/** Zpráva po smazání: první jméno je těleso, na které se kliklo. */
+function describeRemoval(names) {
+  if (names.length === 0) return 'Nic se nesmazalo.';
+  const [first, ...rest] = names;
+  if (rest.length === 0) return `Smazáno: ${first}`;
+  const orbiting = rest.length === 1 ? '1 těleso, které kolem obíhalo' : `${rest.length} těles, která kolem obíhala`;
+  return `Smazáno: ${first} a ${orbiting}`;
+}
+
 /** Oběžná doba ve dnech, čitelně. */
 function formatPeriod(days) {
   const abs = Math.abs(days);
@@ -135,6 +186,15 @@ function formatCount(value) {
 }
 
 function buildControl(control) {
+  if (control.type === 'button') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `field-button${control.danger ? ' field-button--danger' : ''}`;
+    button.dataset.control = control.id;
+    button.textContent = control.label;
+    return button;
+  }
+
   if (control.type === 'heading') {
     const heading = document.createElement('h3');
     heading.className = 'panel__section';

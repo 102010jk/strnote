@@ -220,13 +220,22 @@ body.hud-hidden .hud {
   max-width: min(22rem, calc(100vw - 16px));
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
-  background: rgba(8, 12, 20, 0.82);
+  background: rgba(8, 12, 20, 0.94);
   border: 1px solid rgba(143, 208, 255, 0.35);
   color: #dbeeff;
   font-size: 0.78rem;
   line-height: 1.35;
   white-space: pre-line;
   pointer-events: none;
+}
+
+.info {
+  font-variant-numeric: tabular-nums;
+}
+
+.info::first-line {
+  font-weight: 600;
+  color: #fff;
 }
 
 .launch-label--bad {

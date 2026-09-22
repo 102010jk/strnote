@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.41 – 2026-09-22
+
+Měsíc se přichytí k planetě. Stačí stisknout kousek vedle ní – i v přehledu
+celé soustavy, kde je Země jen tečka – a měsíc bude obíhat ji, v rozumné
+vzdálenosti.
+
+Když najedeš myší na planetu, měsíc nebo hvězdu, ukáže se, co je zač: jméno,
+hmotnost, poloměr, rychlost teď, nejvyšší a nejnižší rychlost na dráze,
+vzdálenost, oběh, otočka a další. Zatím jako obyčejný text.
+
 ## 1.7.4 – 2026-09-22
 
 Tělesa se teď vypouštějí. Stiskni myš tam, kde má těleso vzniknout, táhni

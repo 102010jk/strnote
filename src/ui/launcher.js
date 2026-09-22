@@ -153,7 +153,8 @@ export function createLauncher({ app, scene, toast }) {
     }
 
     const plan = launch.plan;
-    const lines = [`Kolem: ${launch.parentName} · oběh ${formatPeriod(plan.period)}`];
+    const snapped = launch.snapped ? ' (přichyceno)' : '';
+    const lines = [`Kolem: ${launch.parentName}${snapped} · oběh ${formatPeriod(plan.period)}`];
     if (launch.dragged) {
       const shape = plan.e < 0.01 ? 'skoro kruh' : `elipsa, výstřednost ${formatNumber(plan.e)}`;
       lines.push(`${formatSpeed(launch.speed)} (${formatNumber(launch.ratio)}× kruhová) · ${shape}`);

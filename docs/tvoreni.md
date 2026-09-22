@@ -9,6 +9,7 @@ směrem k plnému tvoření v 1.8.
 - 1.7.2 – tvoření kliknutím, kruhové dráhy
 - 1.7.3 – mazání
 - 1.7.4 – vypouštění šipkou, eliptické dráhy, rodič podle hmotnosti
+- 1.7.41 – přichycení k tělesu, vlastnosti tělesa pod kurzorem
 
 Kód: `beginLaunch()`, `aimLaunch()`, `updateLaunch()`, `commitLaunch()`,
 `_chooseParent()`, `_checkLaunch()` a `conicFromState()`
@@ -63,6 +64,26 @@ u Měsíce obíhá Měsíc, stejně těžký „měsíc" obíhá Zemi.
 Místo vzniku je průsečík paprsku z kamery s rovinou rovnoběžnou s ekliptikou,
 vedenou středem rodiče. Pamatuje se **vůči rodiči**, takže při tažení jede
 s ním – planeta se mezitím pohne dál.
+
+### Přichycení (1.7.41)
+
+Hillova sféra Země má 1,5 mil. km – v přehledu soustavy, kde je Země
+150 mil. km od Slunce, jsou to 2–3 pixely. Trefit ji bylo skoro nemožné.
+
+Proto `_snapParent`: stisk do **28 px** od tělesa na obrazovce (plus jeho
+poloměr na obrazovce) ho vezme za rodiče, i když skutečné místo leží za
+jeho dosahem. Místo vzniku se pak posune ve směru kurzoru do **0,35 dosahu**
+– tam jsou dráhy stabilní (Měsíc obíhá ve 0,26 Hillovy sféry Země).
+U Země to je ~0,5 mil. km, oběh ~42 dní. Popisek u šipky píše „přichyceno".
+
+- přichycení platí jen pro **těžší** tělesa (pravidlo hmotnosti zůstává),
+- vyhraje, jen když míří hlouběji než běžná volba (Země místo Slunce);
+  uvnitř skutečného dosahu rozhoduje běžná volba,
+- měsíc, který na obrazovce splývá se svou planetou (blíž než 28 px), se
+  nepočítá – nový měsíc by se jinak náhodně chytal Měsíce místo Země,
+- volné hvězdy se nepřichytávají, mají dosah všude.
+
+Ověřeno: v přehledu soustavy stisk 18 px od Země → měsíc kolem Země.
 
 ### Hvězdy
 
@@ -141,6 +162,30 @@ nejvýš 7× za sekundu.
 
 Srážky ve skutečném měřítku jsou vzácné – planety jsou proti vzdálenostem
 maličké. To je realita, ne chyba; nejčastěji zčervená šipka kvůli bodům 1–4.
+
+## Vlastnosti pod kurzorem (1.7.41)
+
+Najetí myší na těleso ukáže textový výpis (zatím bez designu), `details()`
+ve scéně: druh (hvězda / planeta / měsíc podle rodiče), kolem čeho obíhá,
+hmotnost (kg a násobek Země nebo Slunce), poloměr, teplota u hvězd,
+úniková rychlost z povrchu `√(2Gm/R)`, a u obíhajících těles:
+
+- **rychlost teď** z rovnice vis-viva `v² = μ(2/r − 1/a)`,
+- **max. rychlost** v pericentru `√(μ/a · (1+e)/(1−e))`, **min.** v apocentru,
+- vzdálenost od rodiče, rozsah dráhy (pericentrum – apocentrum), výstřednost,
+  oběžná doba,
+
+dál otočka a sklon osy, dosah (Hillova sféra) a kolik těles ho obíhá.
+Text se přepisuje 10× za sekundu, poloha jede s kurzorem každý snímek.
+Při vypouštění šipkou se popisek schová.
+
+Ověřeno proti skutečnosti: Země 29,3–30,3 km/s, úniková rychlost Země
+11,2 km/s, Slunce 617,8 km/s, Jupiter 60,2 km/s (se středním poloměrem).
+
+**Splývající měsíc** přenechá výběr planetě: v přehledu je Měsíc od Země
+pod pixelem a kurzor na „Zemi" trefil Měsíc. `pick()` proto měsíc blíž než
+8 px ke své planetě nahradí planetou (i víc úrovní). Zblízka jde Měsíc
+vybrat normálně. Platí i pro klik = sledování.
 
 ## Přidávání za běhu
 

@@ -23,7 +23,7 @@ const AU = 149.5978707; // Gm
 export const SOLAR_SYSTEM = [
   {
     id: 'sun', name: 'Slunce', material: 'star',
-    mass: 1.989e30, radius: 0.6957, color: [1.0, 0.93, 0.82],
+    mass: 1.989e30, radius: 0.6957, color: [1.0, 0.93, 0.82], temperature: 5772,
     spin: 25.38, tilt: 7.25,
   },
   {

@@ -11,6 +11,7 @@ export function createHud({ app, scene }) {
   const trisEl = document.querySelector('[data-tris]');
   const focusEl = document.querySelector('[data-focus]');
   const toastEl = document.querySelector('[data-toast]');
+  const infoEl = document.querySelector('[data-info]');
   const motionBtn = document.querySelector('[data-action="toggle-motion"]');
   const resetBtn = document.querySelector('[data-action="reset-view"]');
 
@@ -138,6 +139,41 @@ export function createHud({ app, scene }) {
     } else if (event.key.toLowerCase() === 'h') {
       document.body.classList.toggle('hud-hidden');
     }
+  });
+
+  // Najetí myší na těleso ukáže jeho vlastnosti. Poloha popisku jede
+  // s kurzorem každý snímek, text se přepisuje 10× za sekundu.
+  let hover = null;
+  let hoverIndex = -1;
+  let hoverTimer = 0;
+  app.canvas.addEventListener('pointermove', (event) => {
+    hover = event.buttons === 0 && event.pointerType !== 'touch' ? { x: event.clientX, y: event.clientY } : null;
+  });
+  app.canvas.addEventListener('pointerleave', () => { hover = null; });
+
+  app.onLateUpdate((delta) => {
+    if (!infoEl) return;
+    const index = hover && !scene.launching
+      ? scene.pick(hover.x, hover.y, app.canvas.getBoundingClientRect())
+      : -1;
+
+    if (index < 0) {
+      infoEl.hidden = true;
+      hoverIndex = -1;
+      return;
+    }
+
+    hoverTimer += delta;
+    if (index !== hoverIndex || hoverTimer > 0.1) {
+      infoEl.textContent = scene.details(index);
+      hoverIndex = index;
+      hoverTimer = 0;
+    }
+    infoEl.hidden = false;
+
+    const left = Math.min(hover.x + 16, window.innerWidth - infoEl.offsetWidth - 8);
+    const top = Math.min(hover.y + 18, window.innerHeight - infoEl.offsetHeight - 8);
+    infoEl.style.transform = `translate(${Math.max(left, 8)}px, ${Math.max(top, 8)}px)`;
   });
 
   let accumulator = 0;

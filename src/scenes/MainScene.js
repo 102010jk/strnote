@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SOLAR_SYSTEM } from './solarSystem.js';
+import { formatPeriod } from '../ui/format.js';
 
 // Halo je placka HALO_RATIO× větší než jádro.
 const HALO_RATIO = 9;
@@ -10,6 +11,7 @@ const MIN_CORE_PIXELS = 1.5;
 // Kliknutí trefí těleso, když je kurzor na jeho kouli, nebo do téhle
 // vzdálenosti od ní – planetu o dvou pixelech jinak trefit nejde.
 const PICK_TOLERANCE_PX = 12;
+const MERGED_PX = 8;
 
 // Odstup kamery po kliknutí, v poloměrech tělesa: planeta zabere zhruba
 // třetinu výšky obrazovky, hvězda je vidět i s okolím.
@@ -60,6 +62,12 @@ const LAUNCH_SLOP_PX = 6;
 const COLLISION_BUDGET = 40000;
 const COLLISION_STEPS = [256, 4096];
 const KM_S_PER_GM_DAY = 1e6 / SECONDS_PER_DAY;
+// Přichycení: stisk do SNAP_PX od tělesa na obrazovce ho vezme za rodiče,
+// i když skutečné místo je za jeho dosahem (Hillova sféra Země je v přehledu
+// soustavy pár pixelů). Místo vzniku se pak posune do SNAP_REACH dosahu –
+// tam jsou dráhy stabilní (Měsíc obíhá ve 0,26 Hillovy sféry Země).
+const SNAP_PX = 28;
+const SNAP_REACH = 0.35;
 const PREVIEW_OK = new THREE.Color(0.45, 0.78, 1.0);
 const PREVIEW_BAD = new THREE.Color(1.0, 0.32, 0.26);
 
@@ -803,7 +811,10 @@ export class MainScene {
     const body = this._template(type);
     const ray = this._rayAt(clientX, clientY, rect);
 
-    const choice = this._chooseParent(ray, body.mass);
+    // přichycení vyhraje, jen když míří hlouběji (Země místo Slunce)
+    let choice = this._chooseParent(ray, body.mass);
+    const snap = this._snapParent(ray, clientX, clientY, rect, body);
+    if (snap && (!choice || snap.depth > choice.depth)) choice = snap;
     let point = choice?.point;
 
     if (!point) {
@@ -840,6 +851,7 @@ export class MainScene {
       free: false,
       reason: null,
       parentName: parent >= 0 ? this.list[parent].name : null,
+      snapped: Boolean(choice?.snapped),
       speed: 0,
       ratio: 1,
     };
@@ -1067,6 +1079,55 @@ export class MainScene {
     return reach;
   }
 
+  /**
+   * Těleso, ke kterému se stisk přichytí, nebo null. Kandidáti jsou těžší
+   * tělesa do SNAP_PX od kurzoru (plus jejich poloměr na obrazovce). Měsíc,
+   * který zdálky splývá se svou planetou, se nepočítá – jinak by se nový
+   * měsíc náhodně chytal Měsíce místo Země. Z kandidátů vyhraje nejbližší.
+   */
+  _snapParent(ray, clientX, clientY, rect, body) {
+    const toPixels = this.app.camera.projectionMatrix.elements[5] * rect.height * 0.5;
+    const candidates = new Map();
+
+    for (let j = 0; j < this.count; j++) {
+      if (this.list[j].mass <= body.mass || this._parent[j] < 0) continue; // volné hvězdy mají dosah všude
+      const screen = this._toScreen(this._positionOf(j, this._scratch), rect);
+      if (!screen) continue;
+
+      const distance = Math.hypot(screen.x - clientX, screen.y - clientY);
+      if (distance <= SNAP_PX + (this._sizes[j] * toPixels) / screen.depth) candidates.set(j, { distance, screen });
+    }
+
+    let best = -1;
+    for (const [j, candidate] of candidates) {
+      const parent = candidates.get(this._parent[j]);
+      if (parent && Math.hypot(parent.screen.x - candidate.screen.x, parent.screen.y - candidate.screen.y) < SNAP_PX) continue;
+      if (best < 0 || candidate.distance < candidates.get(best).distance) best = j;
+    }
+    if (best < 0) return null;
+
+    const center = this._positionOf(best);
+    const point = ray.intersectPlane(this._spawnPlane.set(UP, -center.y), new THREE.Vector3());
+    const offset = point ? point.sub(center).setY(0) : new THREE.Vector3();
+    if (offset.lengthSq() === 0) offset.set(1, 0, 0);
+
+    // uvnitř dosahu to vyřeší _chooseParent, přichycení jen přitáhne zvenku
+    const reach = this._reach(best);
+    const distance = offset.length();
+    if (distance < reach) return null;
+
+    const target = Math.max(reach * SNAP_REACH, this._sizes[best] * 2 + body.radius);
+    if (target >= reach) return null;
+
+    return {
+      parent: best,
+      point: center.add(offset.multiplyScalar(target / distance)),
+      depth: this._depth(best),
+      pull: Infinity,
+      snapped: true,
+    };
+  }
+
   _depth(j) {
     let depth = 0;
     for (let i = this._parent[j]; i >= 0; i = this._parent[i]) depth++;
@@ -1218,7 +1279,7 @@ export class MainScene {
 
     if (type === 'star') {
       return {
-        material: 'star', color: kelvinToColor(p.starTemperature),
+        material: 'star', color: kelvinToColor(p.starTemperature), temperature: p.starTemperature,
         mass: p.starMass * SUN_MASS, radius: p.starRadius * SUN_RADIUS,
         spin: 25, tilt: 0,
       };
@@ -1276,7 +1337,9 @@ export class MainScene {
    * Běžný Raycaster tu nejde použít – o poloze těles ví jen shader (aOffset).
    * Polohy ale držíme i na procesoru, takže stačí je promítnout na obrazovku.
    * Kurzor na kouli tělesa vyhrává (z více koulí ta bližší), jinak nejbližší
-   * těleso do PICK_TOLERANCE_PX.
+   * těleso do PICK_TOLERANCE_PX. Měsíc, který zdálky splývá se svou planetou
+   * (blíž než MERGED_PX), přenechá výběr planetě – jinak by v přehledu
+   * soustavy nešlo vybrat Zemi.
    */
   pick(clientX, clientY, rect) {
     const camera = this.app.camera;
@@ -1291,6 +1354,13 @@ export class MainScene {
     const mouseY = halfH - (clientY - rect.top);
     const toPixels = camera.projectionMatrix.elements[5] * halfH;
 
+    if (!this._screenX || this._screenX.length < this.count) {
+      this._screenX = new Float64Array(this.count);
+      this._screenY = new Float64Array(this.count);
+    }
+    const screenX = this._screenX;
+    const screenY = this._screenY;
+
     let hit = -1;
     let hitDepth = Infinity;
     let near = -1;
@@ -1302,10 +1372,13 @@ export class MainScene {
       const z = this._pz[i];
 
       const w = e[3] * x + e[7] * y + e[11] * z + e[15];
+      screenX[i] = NaN;
       if (w <= camera.near) continue; // za kamerou
 
       const dx = ((e[0] * x + e[4] * y + e[8] * z + e[12]) / w) * halfW - mouseX;
       const dy = ((e[1] * x + e[5] * y + e[9] * z + e[13]) / w) * halfH - mouseY;
+      screenX[i] = dx;
+      screenY[i] = dy;
       const distance = dx * dx + dy * dy;
       const radius = (this._sizes[i] * toPixels) / w;
 
@@ -1320,7 +1393,15 @@ export class MainScene {
       }
     }
 
-    return hit >= 0 ? hit : near;
+    if (hit >= 0) return hit;
+
+    // splývající měsíc → jeho planeta (i víc úrovní: měsíc měsíce)
+    for (let parent = near >= 0 ? this._parent[near] : -1; parent >= 0; parent = this._parent[near]) {
+      if (Number.isNaN(screenX[parent])) break;
+      if (Math.hypot(screenX[parent] - screenX[near], screenY[parent] - screenY[near]) >= MERGED_PX) break;
+      near = parent;
+    }
+    return near;
   }
 
   /** Funkce pro kameru: aktuální poloha tělesa, nebo null, když už není. */
@@ -1344,6 +1425,53 @@ export class MainScene {
   /** Krátký popis tělesa pro štítek. */
   describe(index) {
     return this.list[index].name;
+  }
+
+  /**
+   * Vlastnosti tělesa jako text – zatím obyčejný výpis pod kurzorem.
+   * Rychlosti z rovnice vis-viva v² = μ(2/r − 1/a): nejrychleji v pericentru,
+   * nejpomaleji v apocentru.
+   */
+  details(index) {
+    const body = this.list[index];
+    const parent = this._parent[index];
+    const isStar = body.material === 'star';
+    const kind = isStar
+      ? 'hvězda'
+      : parent < 0 ? 'volné těleso' : this.list[parent].material === 'star' ? 'planeta' : 'měsíc';
+
+    const lines = [body.name];
+    lines.push(parent >= 0 ? `${kind} · obíhá: ${this.list[parent].name}` : `${kind} · stojí na místě`);
+    lines.push(`hmotnost: ${formatMass(body.mass, isStar)}`);
+    lines.push(`poloměr: ${formatDistance(body.radius)}`);
+    if (body.temperature) lines.push(`teplota povrchu: ${Math.round(body.temperature).toLocaleString('cs-CZ')} K`);
+    lines.push(`úniková rychlost z povrchu: ${formatSpeed(Math.sqrt((2 * G * body.mass) / body.radius) * KM_S_PER_GM_DAY)}`);
+
+    if (parent >= 0) {
+      const mu = G * (this.list[parent].mass + body.mass);
+      const a = this._a[index];
+      const e = this._e[index];
+      const r = Math.hypot(this._px[index] - this._px[parent], this._py[index] - this._py[parent], this._pz[index] - this._pz[parent]);
+      const speed = (value) => formatSpeed(value * KM_S_PER_GM_DAY);
+
+      lines.push(`rychlost: ${speed(Math.sqrt(mu * (2 / r - 1 / a)))}`);
+      lines.push(`max. rychlost: ${speed(Math.sqrt((mu / a) * ((1 + e) / (1 - e))))} (v pericentru)`);
+      lines.push(`min. rychlost: ${speed(Math.sqrt((mu / a) * ((1 - e) / (1 + e))))} (v apocentru)`);
+      lines.push(`vzdálenost od rodiče: ${formatDistance(r)}`);
+      lines.push(`dráha: ${formatDistance(a * (1 - e))} – ${formatDistance(a * (1 + e))}, výstřednost ${e.toLocaleString('cs-CZ', { maximumFractionDigits: 3 })}`);
+      lines.push(`oběh: ${formatPeriod(body.period)}`);
+    }
+
+    lines.push(`otočka: ${formatPeriod(body.spin)} · sklon osy ${body.tilt.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })}°`);
+
+    const reach = this._reach(index);
+    if (Number.isFinite(reach)) lines.push(`udrží oběžnice do: ${formatDistance(reach)}`);
+
+    let children = 0;
+    for (let i = 0; i < this.count; i++) if (this._parent[i] === index) children++;
+    if (children > 0) lines.push(`obíhá ho: ${countBodies(children)}`);
+
+    return lines.join('\n');
   }
 
   dispose() {
@@ -1467,6 +1595,24 @@ function countBodies(n) {
   if (n === 1) return '1 těleso';
   if (n >= 2 && n <= 4) return `${n} tělesa`;
   return `${n} těles`;
+}
+
+/** Hmotnost v kg a v násobcích Země nebo Slunce. */
+function formatMass(kg, isStar) {
+  const exponent = Math.floor(Math.log10(kg));
+  const mantissa = (kg / 10 ** exponent).toLocaleString('cs-CZ', { maximumFractionDigits: 2 });
+  const superscript = String(exponent).replace(/[0-9-]/g, (c) => '⁰¹²³⁴⁵⁶⁷⁸⁹'['0123456789'.indexOf(c)] ?? '⁻');
+  const [unit, name] = isStar ? [SUN_MASS, 'Slunce'] : [EARTH_MASS, 'Země'];
+  const ratio = kg / unit;
+  const multiple = ratio.toLocaleString('cs-CZ', { maximumSignificantDigits: ratio < 1 ? 3 : 4 });
+  return `${mantissa}·10${superscript} kg (${multiple}× ${name})`;
+}
+
+/** Vzdálenost čitelně: pod milion km v km, dál v mil. km, kolem hvězd i v AU. */
+function formatDistance(gm) {
+  if (gm < 1) return `${Math.round(gm * 1e6).toLocaleString('cs-CZ')} km`;
+  const au = gm / 149.5978707;
+  return au >= 0.1 ? `${formatGm(gm)} (${au.toLocaleString('cs-CZ', { maximumFractionDigits: 3 })} AU)` : formatGm(gm);
 }
 
 /** Vzdálenost v milionech km, česky. */

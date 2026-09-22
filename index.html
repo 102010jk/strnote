@@ -32,6 +32,14 @@
 <body>
   <canvas id="scene"></canvas>
 
+  <!-- šipka při vypouštění tělesa -->
+  <svg class="launch" data-launch hidden aria-hidden="true">
+    <line data-launch-shaft></line>
+    <polygon data-launch-head></polygon>
+    <circle data-launch-dot r="4"></circle>
+  </svg>
+  <div class="launch-label" data-launch-label hidden></div>
+
   <div id="boot" class="boot">
     <div class="boot__inner">
       <div class="boot__spinner" aria-hidden="true"></div>
@@ -61,7 +69,7 @@
       <button type="button" data-action="toggle-motion">Pauza</button>
       <button type="button" data-action="reset-view">Reset</button>
     </div>
-    <p class="hint">Klik na těleso = sledovat · <kbd>Delete</kbd> smaže sledované · <kbd>Esc</kbd> zrušit · <kbd>H</kbd> skrýt UI · <kbd>Mezerník</kbd> pauza</p>
+    <p class="hint">Klik na těleso = sledovat · v tvoření táhni = směr a rychlost, pravé tlačítko otáčí · <kbd>Delete</kbd> smaže sledované · <kbd>Esc</kbd> zrušit · <kbd>H</kbd> skrýt UI · <kbd>Mezerník</kbd> pauza</p>
   </aside>
 
   <noscript>

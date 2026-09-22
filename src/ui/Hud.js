@@ -1,3 +1,5 @@
+import { createLauncher } from './launcher.js';
+
 /**
  * Postaví ovládací panel z popisu v `scene.controls` a napojí ho na scénu.
  * Žádná UI knihovna – přidání dalšího ovladače se dělá ve scéně, ne tady.
@@ -49,16 +51,6 @@ export function createHud({ app, scene }) {
 
   // Některé ovladače patří jen k jednomu typu tělesa (`visible`). Stačí to
   // přepočítat po každé změně v panelu – události z polí k němu probublají.
-  const refresh = () => {
-    for (const { control, element } of fields) {
-      element.hidden = control.visible ? !control.visible() : false;
-    }
-    document.body.classList.toggle('is-creating', Boolean(scene.creating));
-  };
-  panel?.addEventListener('input', refresh);
-  panel?.addEventListener('change', refresh);
-  refresh();
-
   let toastTimer = 0;
   const toast = (text, isError = false) => {
     if (!toastEl) return;
@@ -68,6 +60,19 @@ export function createHud({ app, scene }) {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toastEl.hidden = true; }, isError ? 5000 : 3500);
   };
+
+  const launcher = createLauncher({ app, scene, toast });
+
+  const refresh = () => {
+    for (const { control, element } of fields) {
+      element.hidden = control.visible ? !control.visible() : false;
+    }
+    document.body.classList.toggle('is-creating', Boolean(scene.creating));
+    launcher.sync();
+  };
+  panel?.addEventListener('input', refresh);
+  panel?.addEventListener('change', refresh);
+  refresh();
 
   const stopCreating = () => {
     const select = panel?.querySelector('[data-control="create"]');
@@ -96,17 +101,8 @@ export function createHud({ app, scene }) {
       return;
     }
 
-    // tvoření: kliknutí vytvoří těleso
-    if (scene.creating) {
-      const result = scene.spawn(x, y, rect);
-      if (result.error) {
-        toast(result.error, true);
-      } else {
-        const period = result.period ? ` · oběh ${formatPeriod(result.period)}` : '';
-        toast(`Vytvořeno: ${scene.describe(result.index)}${period}`);
-      }
-      return;
-    }
+    // tvoření obstarává launcher (stisk – tažení – puštění), i obyčejné kliknutí
+    if (scene.creating) return;
 
     // jinak kliknutí na těleso: kamera k němu přeletí a sleduje ho
     const index = scene.pick(x, y, rect);
@@ -128,7 +124,8 @@ export function createHud({ app, scene }) {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
 
     if (event.key === 'Escape') {
-      // Esc nejdřív ukončí tvoření, teprve pak sledování
+      // Esc nejdřív zruší rozdělanou šipku, pak tvoření, teprve pak sledování
+      if (launcher.cancel()) return;
       if (scene.creating) stopCreating();
       else app.clearFocus();
     } else if (event.key === 'Delete' && app.focused && focusedId) {
@@ -166,17 +163,6 @@ function describeRemoval(names) {
   if (rest.length === 0) return `Smazáno: ${first}`;
   const orbiting = rest.length === 1 ? '1 těleso, které kolem obíhalo' : `${rest.length} těles, která kolem obíhala`;
   return `Smazáno: ${first} a ${orbiting}`;
-}
-
-/** Oběžná doba ve dnech, čitelně. */
-function formatPeriod(days) {
-  const abs = Math.abs(days);
-  const number = (value, digits = 1) => value.toLocaleString('cs-CZ', { maximumFractionDigits: digits });
-
-  if (!Number.isFinite(abs)) return 'stojí';
-  if (abs < 1) return `${number(abs * 24)} h`;
-  if (abs < 365.25) return `${number(abs)} dní`;
-  return `${number(abs / 365.25)} let`;
 }
 
 function formatCount(value) {

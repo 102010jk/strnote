@@ -112,6 +112,10 @@ a obíhá svého rodiče podle gravitace jen od něj, ne od sourozenců. Dostane
 opravdové elipsy, správné rychlosti (u pericentra rychleji) i nakloněné roviny,
 ale soustava zůstane stabilní napořád.
 
+> **Od 1.7.4 hotové:** dráhy jsou keplerovské elipsy, nová tělesa se
+> vypouštějí šipkou (poloha + rychlost → dráhové prvky) a rodič se volí
+> podle hmotnosti a Hillovy sféry. Viz docs/tvoreni.md.
+
 Navíc se tím nepřijde o vlastnost, kterou má současné řešení a která se bude
 hodit: **poloha je čistá funkce času.** Dá se skočit na libovolný okamžik bez
 počítání mezikroků a nic se nikdy nerozjede numerickou chybou. Cena je řešení

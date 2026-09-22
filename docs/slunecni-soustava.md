@@ -22,11 +22,19 @@ Ověřeno po spuštění: vzdálenosti od Slunce 0,387 / 0,723 / 1,000 / 1,524 /
 ## Čas
 
 Simulace začíná **v aktuálním okamžiku** a počítá dny od J2000. Planety proto
-stojí zhruba tam, kde opravdu jsou – 21. 9. 2026 vyšla heliocentrická délka
-Země 0° (den před rovnodenností, správně), Saturn 17°, Jupiter 125°.
+stojí tam, kde opravdu jsou. Heliocentrické délky 21. 9. 2026 12:00 UT:
 
-Mars vyšel na 70°, ze skutečné polohy odhaduji ~81°. Rozdíl je chyba kruhových
-drah: Mars má výstřednost 0,093 a ta posouvá polohu až o ±10,6°.
+| | kruhové dráhy (do 1.7.3) | elipsy (od 1.7.4) |
+|---|---|---|
+| Země | 0° | 358,2° (rovnodennost je 23. 9., správně ~358,5°) |
+| Mars | 70° | 80,5° (skutečnost ~81°) |
+| Jupiter | 125° | 130,4° |
+| Saturn | 17° | 10,4° |
+
+Kruhové dráhy dělaly u Marsu chybu 10°, výstřednost 0,093 posouvá polohu až
+o ±10,6°. Od 1.7.4 mají dráhy **skutečnou výstřednost a délku pericentra**
+(JPL, J2000) a poloha se počítá z Keplerovy rovnice. Země je 22. 9. 2026
+1,0037 AU od Slunce, Měsíc 398 600 km od Země (mění se 363–406 tisíc km).
 
 Posuvník „Rychlost" je násobek skutečného času, 1 = realita. Jde logaritmicky
 do 10 000, do políčka se dá napsat cokoliv. Pro představu při 10 000×:
@@ -109,8 +117,10 @@ planeta.
 
 ## Zjednodušení, o kterých je dobré vědět
 
-- **Kruhové dráhy.** Výstřednost se zanedbává; u Marsu to dělá až ~10°,
-  u Merkuru (e = 0,21) ještě víc.
+- **Dráhové prvky se nestáčejí.** Pericentra a uzly se ve skutečnosti
+  pomalu posouvají (u Měsíce rychle – pericentrum oběhne za 8,85 roku);
+  tady platí hodnoty z J2000. U planet to za desítky let dělá desetiny
+  stupně, u Měsíce víc.
 - **Směr sklonu os** není skutečný – všechny osy jsou skloněné kolem stejné
   osy. Velikost sklonu sedí.
 - **Z měsíců jen Měsíc.** Jupiterovy, Saturnovy a další chybí.

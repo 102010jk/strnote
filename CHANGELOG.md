@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.4 – 2026-09-22
+
+Tělesa se teď vypouštějí. Stiskni myš tam, kde má těleso vzniknout, táhni
+a pusť: šipka ukazuje směr a rychlost a rovnou je vidět dráha, po které
+poletí – kruh, protáhlá elipsa, nebo pryč. Když by těleso narazilo, shořelo
+ve hvězdě, uletělo nebo se s něčím srazilo, šipka zčervená, popisek řekne
+proč a nic nevznikne. Obyčejné kliknutí dál udělá kruhovou dráhu.
+
+Kolem čeho těleso obíhá, rozhoduje jeho hmotnost, ne jestli je to planeta
+nebo měsíc: lehká planeta u Země bude obíhat Zemi, těžký měsíc Slunce.
+Hvězda se dá vypustit kolem těžší hvězdy. V tvoření se kamerou otáčí pravým
+tlačítkem.
+
+Planety naší soustavy mají teď skutečné eliptické dráhy, takže stojí
+přesněji tam, kde doopravdy jsou (Mars se posunul o 10°).
+Jak to funguje: [docs/tvoreni.md](docs/tvoreni.md).
+
 ## 1.7.3 – 2026-09-22
 
 Tělesa jde mazat. Přepni kliknutí na „smaže těleso" a klikni na to, co má

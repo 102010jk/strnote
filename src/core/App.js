@@ -41,6 +41,7 @@ export class App {
 
     this.canvas = canvas;
     this.updaters = new Set();
+    this.lateUpdaters = new Set();
     this.running = false;
     this.fps = 0;
 
@@ -148,6 +149,15 @@ export class App {
   onUpdate(fn) {
     this.updaters.add(fn);
     return () => this.updaters.delete(fn);
+  }
+
+  /**
+   * Callback volaný každý snímek až po pohybu kamery (sledování tělesa),
+   * těsně před vykreslením – pro věci, které musí sedět na obrazovce.
+   */
+  onLateUpdate(fn) {
+    this.lateUpdaters.add(fn);
+    return () => this.lateUpdaters.delete(fn);
   }
 
   resize() {
@@ -350,6 +360,7 @@ export class App {
     // kamera sledovala polohu z minulého snímku a byla by pořád o kus pozadu.
     this._updateFocus(delta);
     this._updateClipping();
+    for (const fn of this.lateUpdaters) fn(delta);
     this.composer.render(delta);
   };
 
@@ -374,6 +385,7 @@ export class App {
   dispose() {
     this.stop();
     this.updaters.clear();
+    this.lateUpdaters.clear();
     window.removeEventListener('resize', this._onResize);
     this.canvas.removeEventListener('wheel', this._onWheel);
     this.canvas.removeEventListener('pointerdown', this._onPointerDown);

@@ -52,6 +52,17 @@ const MOON_MATERIALS = ['rock', 'iron', 'water'];
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Vypouštění tažením: šipka dlouhá LAUNCH_PX pixelů = rychlost na kruhovou
+// dráhu. Menší pohyb než LAUNCH_SLOP_PX je kliknutí = kruhová dráha.
+const LAUNCH_PX = 120;
+const LAUNCH_SLOP_PX = 6;
+// Kolik výpočtů poloh smí za snímek stát hlídání srážek s okolními tělesy.
+const COLLISION_BUDGET = 40000;
+const COLLISION_STEPS = [256, 4096];
+const KM_S_PER_GM_DAY = 1e6 / SECONDS_PER_DAY;
+const PREVIEW_OK = new THREE.Color(0.45, 0.78, 1.0);
+const PREVIEW_BAD = new THREE.Color(1.0, 0.32, 0.26);
+
 // Dráhy v zobrazení: kolik bodů má kružnice a kdy zmizí. Mizí, když je kamera
 // blíž než ORBIT_FADE × poloměr dráhy – zblízka je čára jen rovná úsečka
 // vedle planety a ruší.
@@ -81,11 +92,9 @@ export class MainScene {
       planetMaterial: 'rock',
       planetMass: 1, // hmotnosti Země
       planetRadius: 1, // poloměry Země
-      planetSpeed: 1, // násobek rychlosti podle Keplera
       moonMaterial: 'rock',
       moonMass: 0.0123,
       moonRadius: 0.27,
-      moonSpeed: 1,
       starMass: 1, // hmotnosti Slunce
       starRadius: 1, // poloměry Slunce
       starTemperature: 5778, // K
@@ -120,12 +129,15 @@ export class MainScene {
     this._spawnPlane = new THREE.Plane();
     this._created = { planet: 0, moon: 0, star: 0 };
     this._orbitLines = [];
+    this._launch = null;
+    this._scratch = new THREE.Vector3();
 
     this._setBodies(SOLAR_SYSTEM);
     this._buildMaterials();
     this._buildInstances();
     for (let i = 0; i < this.count; i++) this._addOrbitLine(i);
     this._buildRings();
+    this._buildPreview();
 
     this.controls = this._describeControls();
     this.applyAll();
@@ -149,14 +161,17 @@ export class MainScene {
     this._px = new Float64Array(count);
     this._py = new Float64Array(count);
     this._pz = new Float64Array(count);
-    this._ux = new Float64Array(count);
-    this._uy = new Float64Array(count);
-    this._uz = new Float64Array(count);
-    this._vx = new Float64Array(count);
-    this._vy = new Float64Array(count);
-    this._vz = new Float64Array(count);
+    // dráha: P míří do pericentra, Q je směr pohybu v něm; a, b poloosy, e výstřednost
+    this._Px = new Float64Array(count);
+    this._Py = new Float64Array(count);
+    this._Pz = new Float64Array(count);
+    this._Qx = new Float64Array(count);
+    this._Qy = new Float64Array(count);
+    this._Qz = new Float64Array(count);
     this._a = new Float64Array(count);
-    this._angle0 = new Float64Array(count);
+    this._b = new Float64Array(count);
+    this._e = new Float64Array(count);
+    this._M0 = new Float64Array(count); // střední anomálie v J2000
     this._meanMotion = new Float64Array(count); // rad za den
     this._spinRate = new Float64Array(count); // rad za den
     this._parent = new Int32Array(count);
@@ -188,21 +203,34 @@ export class MainScene {
       }
 
       if (parent >= 0) {
-        // Rovina dráhy z ekliptických prvků. Ekliptika (x, y, z nahoru)
-        // se v three.js mapuje na (x, z, −y), aby ležela v rovině XZ.
-        const node = body.node * DEG;
-        const inclination = body.inclination * DEG;
-        this._ux[i] = Math.cos(node);
-        this._uy[i] = 0;
-        this._uz[i] = -Math.sin(node);
-        this._vx[i] = -Math.sin(node) * Math.cos(inclination);
-        this._vy[i] = Math.sin(inclination);
-        this._vz[i] = -Math.cos(node) * Math.cos(inclination);
+        let P;
+        let Q;
+        if (body.frame) {
+          // vytvořená tělesa mají dráhu rovnou ve vektorech scény
+          ({ P, Q } = body.frame);
+        } else {
+          // Rovina dráhy z ekliptických prvků. Ekliptika (x, y, z nahoru)
+          // se v three.js mapuje na (x, z, −y), aby ležela v rovině XZ.
+          // u míří do výstupného uzlu, v je v rovině dráhy kolmo na něj.
+          const node = body.node * DEG;
+          const inclination = body.inclination * DEG;
+          const u = [Math.cos(node), 0, -Math.sin(node)];
+          const v = [-Math.sin(node) * Math.cos(inclination), Math.sin(inclination), -Math.cos(node) * Math.cos(inclination)];
 
+          // pericentrum je o argument šířky ω = ϖ − Ω za uzlem
+          const w = ((body.perihelion ?? body.node) - body.node) * DEG;
+          P = u.map((x, k) => x * Math.cos(w) + v[k] * Math.sin(w));
+          Q = u.map((x, k) => -x * Math.sin(w) + v[k] * Math.cos(w));
+        }
+        [this._Px[i], this._Py[i], this._Pz[i]] = P;
+        [this._Qx[i], this._Qy[i], this._Qz[i]] = Q;
+
+        const e = body.eccentricity ?? 0;
         this._a[i] = body.a;
-        // kruhová dráha: argument šířky = střední délka − délka uzlu;
-        // vytvořená tělesa mají rovnou úhel v J2000 (`phase0`)
-        this._angle0[i] = body.phase0 ?? (body.meanLongitude - body.node) * DEG;
+        this._e[i] = e;
+        this._b[i] = body.a * Math.sqrt(1 - e * e);
+        // střední anomálie = střední délka − délka pericentra
+        this._M0[i] = body.meanAnomaly0 ?? (body.meanLongitude - (body.perihelion ?? body.node)) * DEG;
         this._meanMotion[i] = TAU / body.period;
       }
 
@@ -316,19 +344,20 @@ export class MainScene {
     this.bodies.add(this.halos);
   }
 
-  /** Kružnice dráhy tělesa. Kreslí se kolem rodiče, takže Měsíc má svou kolem Země. */
+  /** Elipsa dráhy tělesa. Kreslí se kolem rodiče, takže Měsíc má svou kolem Země. */
   _addOrbitLine(i) {
     const parent = this._parent[i];
     if (parent < 0) return;
 
     const points = new Float32Array(ORBIT_SEGMENTS * 3);
     for (let k = 0; k < ORBIT_SEGMENTS; k++) {
-      const angle = (k / ORBIT_SEGMENTS) * TAU;
-      const c = Math.cos(angle) * this._a[i];
-      const s = Math.sin(angle) * this._a[i];
-      points[k * 3] = this._ux[i] * c + this._vx[i] * s;
-      points[k * 3 + 1] = this._uy[i] * c + this._vy[i] * s;
-      points[k * 3 + 2] = this._uz[i] * c + this._vz[i] * s;
+      // rovnoměrně podle excentrické anomálie, rodič je v ohnisku
+      const E = (k / ORBIT_SEGMENTS) * TAU;
+      const x = this._a[i] * (Math.cos(E) - this._e[i]);
+      const y = this._b[i] * Math.sin(E);
+      points[k * 3] = this._Px[i] * x + this._Qx[i] * y;
+      points[k * 3 + 1] = this._Py[i] * x + this._Qy[i] * y;
+      points[k * 3 + 2] = this._Pz[i] * x + this._Qz[i] * y;
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -406,6 +435,24 @@ export class MainScene {
     this._buildRings();
   }
 
+  /** Náhled dráhy při vypouštění. Jedna čára, přepisuje se podle šipky. */
+  _buildPreview() {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((ORBIT_SEGMENTS + 1) * 3), 3));
+    const material = new THREE.LineBasicMaterial({
+      color: PREVIEW_OK.clone(),
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    this._preview = new THREE.Line(geometry, material);
+    this._preview.frustumCulled = false;
+    this._preview.renderOrder = 2;
+    this._preview.visible = false;
+    this.bodies.add(this._preview);
+    this._track(geometry, material);
+  }
+
   _describeControls() {
     const p = this.params;
 
@@ -443,11 +490,6 @@ export class MainScene {
         get: () => p.planetRadius,
         set: (v) => { p.planetRadius = v; },
       },
-      {
-        id: 'planetSpeed', label: 'Rychlost oběhu (× Kepler)', min: 0.1, max: 10, step: 0.01, log: true, visible: only('planet'),
-        get: () => p.planetSpeed,
-        set: (v) => { p.planetSpeed = v; },
-      },
 
       {
         id: 'moonMaterial', label: 'Materiál', type: 'select', raw: true, visible: only('moon'),
@@ -464,11 +506,6 @@ export class MainScene {
         id: 'moonRadius', label: 'Poloměr (× Země)', min: 0.02, max: 2, step: 0.01, log: true, visible: only('moon'),
         get: () => p.moonRadius,
         set: (v) => { p.moonRadius = v; },
-      },
-      {
-        id: 'moonSpeed', label: 'Rychlost oběhu (× Kepler)', min: 0.1, max: 10, step: 0.01, log: true, visible: only('moon'),
-        get: () => p.moonSpeed,
-        set: (v) => { p.moonSpeed = v; },
       },
 
       {
@@ -592,13 +629,15 @@ export class MainScene {
         continue;
       }
 
-      const angle = this._angle0[i] + this._meanMotion[i] * days;
-      const c = Math.cos(angle) * this._a[i];
-      const s = Math.sin(angle) * this._a[i];
+      // Keplerova rovnice: ze střední anomálie excentrická, z ní poloha na elipse
+      const e = this._e[i];
+      const E = eccentricAnomaly(this._M0[i] + this._meanMotion[i] * days, e);
+      const x = this._a[i] * (Math.cos(E) - e);
+      const y = this._b[i] * Math.sin(E);
 
-      px[i] = px[parent] + this._ux[i] * c + this._vx[i] * s;
-      py[i] = py[parent] + this._uy[i] * c + this._vy[i] * s;
-      pz[i] = pz[parent] + this._uz[i] * c + this._vz[i] * s;
+      px[i] = px[parent] + this._Px[i] * x + this._Qx[i] * y;
+      py[i] = py[parent] + this._Py[i] * x + this._Qy[i] * y;
+      pz[i] = pz[parent] + this._Pz[i] * x + this._Qz[i] * y;
     }
 
     // Na GPU relativně ke kameře: skupina `bodies` stojí na kameře a tělesa
@@ -745,11 +784,461 @@ export class MainScene {
     return this.count - 1;
   }
 
+  // ------------------------------------------------------------ vypouštění
+
+  get launching() {
+    return this._launch !== null;
+  }
+
   /**
-   * Vytvoří těleso tam, kam míří kliknutí.
-   * Vrací `{ index, period }`, nebo `{ error }` s vysvětlením pro člověka.
+   * Stisk myši v režimu tvoření. Najde, kolem čeho bude těleso obíhat
+   * (podle hmotnosti, viz _chooseParent), a zapamatuje si místo vzniku
+   * vůči rodiči – rodič se mezitím dál pohybuje a místo jede s ním.
+   * Vrací `{}`, nebo `{ error }` s vysvětlením pro člověka.
    */
-  spawn(clientX, clientY, rect) {
+  beginLaunch(clientX, clientY, rect) {
+    this.cancelLaunch();
+
+    const type = this.params.create;
+    const body = this._template(type);
+    const ray = this._rayAt(clientX, clientY, rect);
+
+    const choice = this._chooseParent(ray, body.mass);
+    let point = choice?.point;
+
+    if (!point) {
+      if (type !== 'star') {
+        const heavier = this.list.some((other) => other.mass > body.mass);
+        return {
+          error: heavier
+            ? 'Tady nic těžšího těleso neudrží – klikni blíž k hvězdě nebo planetě.'
+            : 'Není kolem čeho obíhat – nejdřív vytvoř něco těžšího, třeba hvězdu.',
+        };
+      }
+      // hvězda bez těžšího souseda může stát sama
+      point = ray.intersectPlane(this._spawnPlane.set(UP, 0), new THREE.Vector3());
+      if (!point) return { error: 'Klikni do roviny soustavy – teď míříš mimo ni.' };
+    }
+
+    const overlap = this._overlapping(point, body.radius);
+    if (overlap >= 0) return { error: `Tady už je ${this.list[overlap].name}.` };
+
+    const parent = choice ? choice.parent : -1;
+    this._launch = {
+      type,
+      body,
+      parentId: parent >= 0 ? this.list[parent].id : null,
+      // vůči rodiči, u volné hvězdy absolutně
+      offset: parent >= 0 ? point.clone().sub(this._positionOf(parent)) : point.clone(),
+      down: { x: clientX, y: clientY },
+      pointer: { x: clientX, y: clientY },
+      dragged: false,
+      rect,
+      origin: new THREE.Vector3(),
+      screen: null,
+      plan: null,
+      free: false,
+      reason: null,
+      parentName: parent >= 0 ? this.list[parent].name : null,
+      speed: 0,
+      ratio: 1,
+    };
+    this.updateLaunch(rect);
+    return {};
+  }
+
+  /** Pohyb myši při vypouštění – šipka vede od místa vzniku ke kurzoru. */
+  aimLaunch(clientX, clientY) {
+    const launch = this._launch;
+    if (!launch) return;
+    launch.pointer.x = clientX;
+    launch.pointer.y = clientY;
+    if (Math.hypot(clientX - launch.down.x, clientY - launch.down.y) > LAUNCH_SLOP_PX) launch.dragged = true;
+  }
+
+  cancelLaunch() {
+    this._launch = null;
+    if (this._preview) this._preview.visible = false;
+  }
+
+  /**
+   * Puštění myši: těleso vznikne, pokud je dráha v pořádku.
+   * Vrací `{ index, period, parentName }`, nebo `{ error }`.
+   */
+  commitLaunch() {
+    const launch = this._launch;
+    if (!launch) return { error: 'Nic se nevypouští.' };
+
+    this.updateLaunch(launch.rect);
+    this.cancelLaunch();
+    if (launch.reason) return { error: launch.reason };
+
+    const n = ++this._created[launch.type];
+    const names = { planet: 'Planeta', moon: 'Měsíc', star: 'Hvězda' };
+    const body = { ...launch.body, id: `${launch.type}-${n}`, name: `${names[launch.type]} ${n}` };
+
+    if (launch.free) {
+      const { x, y, z } = launch.origin;
+      return { index: this.addBody({ ...body, position: [x, y, z] }) };
+    }
+
+    const plan = launch.plan;
+    const index = this.addBody({
+      spin: plan.period, // měsíc bez vlastní rotace je k rodiči natočený pořád stejně
+      ...body,
+      parent: launch.parentId,
+      a: plan.a,
+      eccentricity: plan.e,
+      period: plan.period,
+      frame: { P: plan.P, Q: plan.Q },
+      meanAnomaly0: plan.M0,
+    });
+    return { index, period: plan.period, parentName: launch.parentName };
+  }
+
+  /**
+   * Přepočítá vypouštění pro aktuální snímek: kde je místo vzniku, kam míří
+   * šipka, jaká z toho vyjde dráha a jestli je v pořádku. Volá se až po
+   * pohybu kamery, aby šipka seděla na místě vzniku.
+   *
+   * Rychlost: šipka dlouhá LAUNCH_PX pixelů = rychlost na kruhovou dráhu
+   * v tomhle místě, směr je směr šipky v rovině dráhy. Bez tažení kruhová
+   * dráha. Z polohy a rychlosti vyjde kuželosečka (conicFromState).
+   */
+  updateLaunch(rect) {
+    const launch = this._launch;
+    if (!launch) return null;
+    launch.rect = rect;
+
+    let parent = -1;
+    if (launch.parentId) {
+      parent = this.indexOfId(launch.parentId);
+      if (parent < 0) {
+        // rodiče mezitím někdo smazal
+        this.cancelLaunch();
+        return null;
+      }
+    }
+
+    const origin = launch.origin.copy(launch.offset);
+    if (parent >= 0) origin.add(this._positionOf(parent, this._scratch));
+    launch.screen = this._toScreen(origin, rect);
+
+    launch.plan = null;
+    launch.reason = null;
+    launch.speed = 0;
+    launch.ratio = 1;
+    launch.free = launch.type === 'star' && (!launch.dragged || parent < 0);
+
+    if (launch.free) {
+      this._preview.visible = false;
+      if (launch.dragged) launch.reason = 'Není tu nic těžšího, kolem čeho by hvězda obíhala. Bez tažení zůstane stát.';
+      return launch;
+    }
+
+    const r = launch.offset;
+    const mu = G * (this.list[parent].mass + launch.body.mass);
+    const circular = Math.sqrt(mu / r.length());
+    const velocity = new THREE.Vector3();
+
+    if (launch.dragged) {
+      const ray = this._rayAt(launch.pointer.x, launch.pointer.y, rect);
+      const tip = ray.intersectPlane(this._spawnPlane.set(UP, -origin.y), new THREE.Vector3());
+      const direction = tip?.sub(origin).setY(0);
+      if (!direction || direction.lengthSq() === 0 || !launch.screen) {
+        this._preview.visible = false;
+        launch.reason = 'Šipka míří mimo rovinu dráhy.';
+        return launch;
+      }
+      launch.ratio = Math.hypot(launch.pointer.x - launch.screen.x, launch.pointer.y - launch.screen.y) / LAUNCH_PX;
+      velocity.copy(direction.normalize()).multiplyScalar(circular * launch.ratio);
+    } else {
+      // kolmo k rodiči, ve směru oběhu planet
+      velocity.crossVectors(UP, r).normalize().multiplyScalar(circular);
+    }
+
+    const plan = conicFromState(r, velocity, mu, this._days);
+    launch.plan = plan;
+    launch.speed = velocity.length() * KM_S_PER_GM_DAY;
+    launch.escape = Math.sqrt((2 * mu) / r.length()) * KM_S_PER_GM_DAY;
+    launch.reason = this._checkLaunch(launch, parent, plan);
+
+    this._drawPreview(plan, parent, launch.reason !== null);
+    return launch;
+  }
+
+  /** Co se vypouštěním děje, pro šipku a popisek u kurzoru. */
+  get launch() {
+    return this._launch;
+  }
+
+  /** Proč dráha nejde, nebo null. Pořadí = co člověk uvidí jako první. */
+  _checkLaunch(launch, parent, plan) {
+    const name = this.list[parent].name;
+    const radius = launch.body.radius;
+
+    if (launch.dragged) {
+      const target = this._arrowTarget(launch);
+      if (target >= 0) return `Míří přímo na těleso ${this.list[target].name}.`;
+    }
+
+    // do pericentra se dostane, jen když ho má před sebou (u otevřené dráhy)
+    const isStar = this.list[parent].material === 'star';
+    const minimum = this._sizes[parent] * (isStar ? 2 : 1) + radius;
+    if (plan.q < minimum && (plan.e < 1 || plan.nu < 0)) {
+      return isStar
+        ? `Dráha vede moc blízko hvězdy ${name} – shořelo by.`
+        : `Narazí do tělesa ${name}.`;
+    }
+
+    if (plan.e >= 1) {
+      return `Uletí – ${name} ho takhle rychlé neudrží (úniková rychlost je ${formatSpeed(launch.escape)}).`;
+    }
+
+    // s ohraničením: těleso nesmí doletět tam, kde by si ho vzal někdo jiný
+    const reach = this._reach(parent);
+    if (plan.apo > reach) {
+      return `Odletí moc daleko – ${name} ho udrží jen do ${formatGm(reach)} (dráha sahá do ${formatGm(plan.apo)}).`;
+    }
+
+    // Srážky jsou nejdražší část (pár ms). Počítají se znovu, jen když se
+    // pohne šipka, jinak nejvýš 7× za sekundu – okolí se hýbe pomalu.
+    const key = `${launch.pointer.x},${launch.pointer.y},${launch.dragged},${parent}`;
+    const now = performance.now();
+    if (launch.collisionKey !== key || now - launch.collisionTime > 150) {
+      launch.collision = this._collision(parent, plan, radius);
+      launch.collisionKey = key;
+      launch.collisionTime = now;
+    }
+    const hit = launch.collision;
+    if (hit >= 0 && hit < this.count) return `Srazí se s tělesem ${this.list[hit].name}.`;
+
+    return null;
+  }
+
+  /**
+   * Kolem čeho bude těleso obíhat – podle hmotnosti, ne podle toho, jestli
+   * je to „planeta" nebo „měsíc". Rodič musí být těžší a místo musí ležet
+   * v jeho dosahu (_reach). Z více takových vyhraje to nejhlouběji
+   * v hierarchii (Země před Sluncem), mezi rovnocennými to, co táhne nejvíc
+   * (M / d²). Místo vzniku je v rovině rovnoběžné s ekliptikou vedené
+   * středem rodiče.
+   */
+  _chooseParent(ray, mass) {
+    let best = null;
+
+    for (let j = 0; j < this.count; j++) {
+      if (this.list[j].mass <= mass) continue;
+
+      const center = this._positionOf(j);
+      const point = ray.intersectPlane(this._spawnPlane.set(UP, -center.y), new THREE.Vector3());
+      if (!point) continue;
+
+      const distance = point.distanceTo(center);
+      if (distance >= this._reach(j)) continue;
+
+      const depth = this._depth(j);
+      const pull = this.list[j].mass / Math.max(distance * distance, 1e-30);
+      if (!best || depth > best.depth || (depth === best.depth && pull > best.pull)) {
+        best = { parent: j, point, depth, pull };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Do jaké vzdálenosti těleso udrží, co kolem něj obíhá. U obíhajícího
+   * tělesa Hillova sféra r_H = a(1 − e) · ∛(m / 3M), dál by si oběžnici
+   * přetáhl jeho rodič. Volná hvězda drží všechno do půli cesty k nejbližší
+   * jiné volné hvězdě – nic nesmí přeskočit od hvězdy k hvězdě.
+   */
+  _reach(j) {
+    const parent = this._parent[j];
+    if (parent >= 0) {
+      return this._a[j] * (1 - this._e[j]) * Math.cbrt(this.list[j].mass / (3 * this.list[parent].mass));
+    }
+
+    let reach = Infinity;
+    for (let k = 0; k < this.count; k++) {
+      if (k === j || this._parent[k] >= 0) continue;
+      const distance = Math.hypot(this._px[k] - this._px[j], this._py[k] - this._py[j], this._pz[k] - this._pz[j]);
+      reach = Math.min(reach, distance / 2);
+    }
+    return reach;
+  }
+
+  _depth(j) {
+    let depth = 0;
+    for (let i = this._parent[j]; i >= 0; i = this._parent[i]) depth++;
+    return depth;
+  }
+
+  /** Těleso, do kterého by nové těleso v tomhle bodě zasahovalo, nebo -1. */
+  _overlapping(point, radius) {
+    for (let j = 0; j < this.count; j++) {
+      const distance = Math.hypot(point.x - this._px[j], point.y - this._py[j], point.z - this._pz[j]);
+      if (distance < this._sizes[j] + radius) return j;
+    }
+    return -1;
+  }
+
+  /**
+   * Těleso, přes které vede šipka na obrazovce, nebo -1. Tělesa se počítají
+   * aspoň jako kolečko o 3 px, aby šla trefit i zdálky. Těleso, na kterém
+   * šipka začíná (měsíc zdálky splyne s planetou), se nepočítá – o srážce
+   * s ním rozhoduje dráha.
+   */
+  _arrowTarget(launch) {
+    const rect = launch.rect;
+    const from = launch.screen;
+    const to = launch.pointer;
+    if (!from) return -1;
+
+    const camera = this.app.camera;
+    const toPixels = camera.projectionMatrix.elements[5] * rect.height * 0.5;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const lengthSq = dx * dx + dy * dy || 1;
+
+    for (let j = 0; j < this.count; j++) {
+      const screen = this._toScreen(this._positionOf(j, this._scratch), rect);
+      if (!screen) continue;
+
+      const radius = Math.max((this._sizes[j] * toPixels) / screen.depth, 3);
+      if (Math.hypot(screen.x - from.x, screen.y - from.y) <= radius) continue;
+
+      const t = Math.min(Math.max(((screen.x - from.x) * dx + (screen.y - from.y) * dy) / lengthSq, 0), 1);
+      if (Math.hypot(from.x + dx * t - screen.x, from.y + dy * t - screen.y) <= radius) return j;
+    }
+    return -1;
+  }
+
+  /**
+   * Srazí se nové těleso během prvního oběhu s něčím, co obíhá stejného
+   * rodiče? Obě dráhy jsou známé dopředu (Kepler), takže stačí je projít
+   * v čase. Mezi kroky se bere nejmenší vzdálenost úsečky, ne jen body –
+   * planety jsou vůči drahám drobné a body by srážku přeskočily.
+   */
+  _collision(parent, plan, radius) {
+    const siblings = [];
+    for (let i = 0; i < this.count; i++) if (this._parent[i] === parent) siblings.push(i);
+    if (siblings.length === 0) return -1;
+
+    const steps = Math.min(Math.max(Math.floor(COLLISION_BUDGET / siblings.length), COLLISION_STEPS[0]), COLLISION_STEPS[1]);
+    const path = (this._pathBuffer ??= new Float64Array((COLLISION_STEPS[1] + 1) * 3));
+    const [Px, Py, Pz] = plan.P;
+    const [Qx, Qy, Qz] = plan.Q;
+
+    for (let k = 0; k <= steps; k++) {
+      const t = this._days + (plan.period * k) / steps;
+      const E = eccentricAnomaly(plan.M0 + plan.n * t, plan.e);
+      const x = plan.a * (Math.cos(E) - plan.e);
+      const y = plan.b * Math.sin(E);
+      path[k * 3] = Px * x + Qx * y;
+      path[k * 3 + 1] = Py * x + Qy * y;
+      path[k * 3 + 2] = Pz * x + Qz * y;
+    }
+
+    for (const s of siblings) {
+      const limit = this._sizes[s] + radius;
+      const e = this._e[s];
+      let ax = 0;
+      let ay = 0;
+      let az = 0;
+
+      for (let k = 0; k <= steps; k++) {
+        const t = this._days + (plan.period * k) / steps;
+        const E = eccentricAnomaly(this._M0[s] + this._meanMotion[s] * t, e);
+        const x = this._a[s] * (Math.cos(E) - e);
+        const y = this._b[s] * Math.sin(E);
+
+        // vzájemná poloha nového tělesa a sourozence
+        const bx = path[k * 3] - (this._Px[s] * x + this._Qx[s] * y);
+        const by = path[k * 3 + 1] - (this._Py[s] * x + this._Qy[s] * y);
+        const bz = path[k * 3 + 2] - (this._Pz[s] * x + this._Qz[s] * y);
+
+        if (k > 0 && segmentDistance(ax, ay, az, bx, by, bz) < limit) return s;
+        ax = bx;
+        ay = by;
+        az = bz;
+      }
+    }
+    return -1;
+  }
+
+  /** Náhled dráhy kolem rodiče: elipsa celá, otevřená dráha od místa vzniku ven. */
+  _drawPreview(plan, parent, bad) {
+    const attribute = this._preview.geometry.attributes.position;
+    const array = attribute.array;
+    const [Px, Py, Pz] = plan.P;
+    const [Qx, Qy, Qz] = plan.Q;
+    let count = 0;
+
+    const put = (x, y) => {
+      array[count * 3] = Px * x + Qx * y;
+      array[count * 3 + 1] = Py * x + Qy * y;
+      array[count * 3 + 2] = Pz * x + Qz * y;
+      count++;
+    };
+
+    if (plan.e < 1) {
+      for (let k = 0; k <= ORBIT_SEGMENTS; k++) {
+        const E = (k / ORBIT_SEGMENTS) * TAU;
+        put(plan.a * (Math.cos(E) - plan.e), plan.b * Math.sin(E));
+      }
+    } else if (plan.radial) {
+      // střemhlav: rovnou dovnitř, nebo rovnou pryč
+      put(plan.r0, 0);
+      put(plan.nu < 0 ? 0 : plan.r0 * 30, 0);
+    } else {
+      const end = Math.acos(-1 / plan.e) * 0.98;
+      for (let k = 0; k <= ORBIT_SEGMENTS; k++) {
+        const nu = plan.nu + ((end - plan.nu) * k) / ORBIT_SEGMENTS;
+        const r = plan.p / (1 + plan.e * Math.cos(nu));
+        if (r > plan.r0 * 30 || r < 0) break;
+        put(r * Math.cos(nu), r * Math.sin(nu));
+      }
+    }
+
+    attribute.needsUpdate = true;
+    this._preview.geometry.setDrawRange(0, count);
+    this._preview.material.color.copy(bad ? PREVIEW_BAD : PREVIEW_OK);
+    // skupina `bodies` stojí na kameře – stejně jako u drah
+    this._preview.position.set(
+      this._px[parent] - this.bodies.position.x,
+      this._py[parent] - this.bodies.position.y,
+      this._pz[parent] - this.bodies.position.z,
+    );
+    this._preview.visible = count > 1;
+  }
+
+  /** Vlastnosti nového tělesa podle panelu. Hmotnost rozhoduje o rodiči. */
+  _template(type) {
+    const p = this.params;
+
+    if (type === 'star') {
+      return {
+        material: 'star', color: kelvinToColor(p.starTemperature),
+        mass: p.starMass * SUN_MASS, radius: p.starRadius * SUN_RADIUS,
+        spin: 25, tilt: 0,
+      };
+    }
+
+    const planet = type === 'planet';
+    const material = planet ? p.planetMaterial : p.moonMaterial;
+    const look = MATERIAL_LOOKS[material];
+    const body = {
+      material, color: look.color, bands: look.bands,
+      mass: (planet ? p.planetMass : p.moonMass) * EARTH_MASS,
+      radius: (planet ? p.planetRadius : p.moonRadius) * EARTH_RADIUS,
+      tilt: 0,
+    };
+    // planeta se točí za den, měsíc stejně dlouho, jak obíhá (doplní se podle dráhy)
+    if (planet) body.spin = 1;
+    return body;
+  }
+
+  _rayAt(clientX, clientY, rect) {
     const camera = this.app.camera;
     camera.updateMatrixWorld();
     this._pointer.set(
@@ -757,142 +1246,24 @@ export class MainScene {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this._raycaster.setFromCamera(this._pointer, camera);
-    const ray = this._raycaster.ray;
-
-    if (this.params.create === 'moon') return this._spawnMoon(ray);
-
-    // planety a hvězdy vznikají v rovině ekliptiky, tam kde ji protne paprsek
-    const point = ray.intersectPlane(this._spawnPlane.set(UP, 0), new THREE.Vector3());
-    if (!point) return { error: 'Klikni do roviny soustavy – teď míříš mimo ni.' };
-
-    return this.params.create === 'star' ? this._spawnStar(point) : this._spawnPlanet(point);
+    return this._raycaster.ray;
   }
 
-  _spawnPlanet(point) {
-    const p = this.params;
-    const star = this._nearest(point, (i) => this.list[i].material === 'star');
-    if (star < 0) return { error: 'Není kolem čeho obíhat – nejdřív vytvoř hvězdu.' };
-    const distance = point.distanceTo(this._positionOf(star));
+  /** Bod ve světě → souřadnice na stránce (`depth` = vzdálenost před kamerou), nebo null za kamerou. */
+  _toScreen(point, rect) {
+    const camera = this.app.camera;
+    camera.updateMatrixWorld();
+    const e = this._pickMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
+    const { x, y, z } = point;
 
-    if (distance < this._sizes[star] * 2) {
-      return { error: `Moc blízko hvězdy ${this.list[star].name} – planeta by shořela.` };
-    }
+    const w = e[3] * x + e[7] * y + e[11] * z + e[15];
+    if (w <= camera.near) return null;
 
-    const look = MATERIAL_LOOKS[p.planetMaterial];
-    const n = ++this._created.planet;
-    return this._orbit(
-      {
-        id: `planet-${n}`, name: `Planeta ${n}`, material: p.planetMaterial,
-        color: look.color, bands: look.bands,
-        mass: p.planetMass * EARTH_MASS, radius: p.planetRadius * EARTH_RADIUS,
-        spin: 1, tilt: 0,
-      },
-      star, point, p.planetSpeed,
-    );
-  }
-
-  /**
-   * Měsíc obíhá planetu, které je paprsek nejblíž, v rovině rovnoběžné
-   * s ekliptikou vedenou jejím středem. Planeta ho udrží jen uvnitř své
-   * Hillovy sféry – dál by ho k sobě stáhla hvězda.
-   */
-  _spawnMoon(ray) {
-    const p = this.params;
-    let planet = -1;
-    let best = Infinity;
-
-    for (let i = 0; i < this.count; i++) {
-      const parent = this._parent[i];
-      if (parent < 0 || this.list[parent].material !== 'star') continue; // jen planety
-      const distance = ray.distanceToPoint(this._positionOf(i));
-      if (distance < best) {
-        best = distance;
-        planet = i;
-      }
-    }
-    if (planet < 0) return { error: 'Není kolem čeho obíhat – nejdřív vytvoř planetu.' };
-
-    const center = this._positionOf(planet);
-    const point = ray.intersectPlane(this._spawnPlane.set(UP, -center.y), new THREE.Vector3());
-    if (!point) return { error: 'Klikni do roviny planety – teď míříš mimo ni.' };
-
-    const name = this.list[planet].name;
-    const distance = point.distanceTo(center);
-    if (distance < this._sizes[planet] * 1.5) {
-      return { error: `Moc blízko tělesa ${name} – měsíc by do něj narazil.` };
-    }
-
-    const star = this._parent[planet];
-    const hill = this._a[planet] * Math.cbrt(this.list[planet].mass / (3 * this.list[star].mass));
-    if (distance > hill) {
-      return {
-        error: `Tak daleko se u tělesa ${name} měsíc neudrží – musí být do ${formatGm(hill)} (teď ${formatGm(distance)}).`,
-      };
-    }
-
-    const look = MATERIAL_LOOKS[p.moonMaterial];
-    const n = ++this._created.moon;
-    return this._orbit(
-      {
-        id: `moon-${n}`, name: `Měsíc ${n}`, material: p.moonMaterial,
-        color: look.color, bands: look.bands,
-        mass: p.moonMass * EARTH_MASS, radius: p.moonRadius * EARTH_RADIUS,
-        tilt: 0,
-      },
-      planet, point, p.moonSpeed,
-    );
-  }
-
-  _spawnStar(point) {
-    const p = this.params;
-    const n = ++this._created.star;
-    const index = this.addBody({
-      id: `star-${n}`, name: `Hvězda ${n}`, material: 'star',
-      color: kelvinToColor(p.starTemperature),
-      mass: p.starMass * SUN_MASS, radius: p.starRadius * SUN_RADIUS,
-      spin: 25, tilt: 0,
-      position: [point.x, point.y, point.z],
-    });
-    return { index };
-  }
-
-  /**
-   * Kruhová dráha kolem rodiče přes bod kliknutí. Oběžná doba z 3. Keplerova
-   * zákona, T = 2π √(a³ / G(M + m)), vydělená násobkem rychlosti. Fáze je
-   * nastavená tak, aby se těleso objevilo přesně tam, kam se kliklo.
-   */
-  _orbit(body, parent, point, speed) {
-    const center = this._positionOf(parent);
-    const dx = point.x - center.x;
-    const dz = point.z - center.z;
-    const a = Math.hypot(dx, dz);
-
-    const period = (TAU * Math.sqrt(a ** 3 / (G * (this.list[parent].mass + body.mass)))) / speed;
-    const angle = Math.atan2(-dz, dx); // stejná rovina jako u prvků s nulovým sklonem a uzlem
-    const phase0 = angle - (TAU / period) * this._days;
-
-    const index = this.addBody({
-      spin: period, // měsíc bez vlastní rotace je k rodiči natočený pořád stejně
-      ...body,
-      parent: this.list[parent].id,
-      a, period, inclination: 0, node: 0, phase0,
-    });
-    return { index, period };
-  }
-
-  _nearest(point, filter) {
-    let best = -1;
-    let bestDistance = Infinity;
-
-    for (let i = 0; i < this.count; i++) {
-      if (!filter(i)) continue;
-      const distance = point.distanceTo(this._positionOf(i));
-      if (distance < bestDistance) {
-        best = i;
-        bestDistance = distance;
-      }
-    }
-    return best;
+    return {
+      x: rect.left + ((((e[0] * x + e[4] * y + e[8] * z + e[12]) / w) + 1) * rect.width) / 2,
+      y: rect.top + ((1 - (e[1] * x + e[5] * y + e[9] * z + e[13]) / w) * rect.height) / 2,
+      depth: w,
+    };
   }
 
   _positionOf(index, target = new THREE.Vector3()) {
@@ -976,6 +1347,7 @@ export class MainScene {
   }
 
   dispose() {
+    this.cancelLaunch();
     this.group.removeFromParent();
     this._orbitLines.forEach(({ geometry, material }) => { geometry.dispose(); material.dispose(); });
     this._rings.forEach(({ mesh }) => { mesh.geometry.dispose(); mesh.material.dispose(); });
@@ -1010,6 +1382,84 @@ function dynamicAttribute(array, size) {
 
 function cloneUniforms(uniforms) {
   return Object.fromEntries(Object.entries(uniforms).map(([key, { value }]) => [key, { value }]));
+}
+
+/**
+ * Keplerova rovnice M = E − e·sin E, Newtonovou metodou. U protáhlých drah
+ * (e > 0,8) se začíná od π, jinak by metoda u pericentra přestřelovala.
+ */
+function eccentricAnomaly(M, e) {
+  M %= TAU;
+  if (M > Math.PI) M -= TAU;
+  else if (M < -Math.PI) M += TAU;
+  if (e === 0) return M;
+
+  let E = e < 0.8 ? M : (M < 0 ? -Math.PI : Math.PI);
+  for (let k = 0; k < 50; k++) {
+    const step = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    E -= step;
+    if (Math.abs(step) < 1e-13) break;
+  }
+  return E;
+}
+
+/**
+ * Dráha z polohy a rychlosti vůči rodiči (μ = G(M + m)). Vrací kuželosečku:
+ * výstřednost `e`, parametr `p`, pericentrum `q`, pravou anomálii `nu` místa
+ * vzniku, jednotkové P (k pericentru) a Q (směr pohybu v něm); u elipsy navíc
+ * poloosy, střední pohyb `n`, oběžnou dobu, apocentrum a střední anomálii
+ * v J2000 (`M0`), ať se dá uložit stejně jako tělesa soustavy.
+ */
+function conicFromState(r, v, mu, days) {
+  const r0 = r.length();
+  const h = new THREE.Vector3().crossVectors(r, v);
+  const hLength = h.length();
+  const energy = v.lengthSq() / 2 - mu / r0;
+
+  // vypuštěné přímo k rodiči nebo od něj – úsečka, žádná rovina dráhy
+  if (hLength <= 1e-9 * r0 * v.length()) {
+    const inward = r.dot(v) < 0;
+    return {
+      radial: true, e: energy < 0 ? 0.999999 : 1, q: 0, p: 0, r0,
+      nu: inward || energy < 0 ? -1 : 1,
+      P: r.clone().divideScalar(r0).toArray(), Q: [0, 0, 0],
+      a: energy < 0 ? -mu / (2 * energy) : Infinity, apo: Infinity,
+    };
+  }
+
+  const eVector = new THREE.Vector3().crossVectors(v, h).divideScalar(mu).addScaledVector(r, -1 / r0);
+  const e = eVector.length();
+  const P = e > 1e-10 ? eVector.divideScalar(e) : r.clone().divideScalar(r0);
+  const Q = new THREE.Vector3().crossVectors(h, P).divideScalar(hLength);
+
+  const nu = Math.atan2(Q.dot(r), P.dot(r));
+  const p = (hLength * hLength) / mu;
+  const plan = { e, p, q: p / (1 + e), nu, r0, P: P.toArray(), Q: Q.toArray() };
+
+  if (e < 1) {
+    const a = p / (1 - e * e);
+    const E = Math.atan2(Math.sqrt(1 - e * e) * Math.sin(nu), e + Math.cos(nu));
+    const n = Math.sqrt(mu / a ** 3);
+    Object.assign(plan, {
+      a, b: a * Math.sqrt(1 - e * e), n, period: TAU / n, apo: a * (1 + e),
+      M0: E - e * Math.sin(E) - n * days,
+    });
+  }
+  return plan;
+}
+
+/** Nejmenší vzdálenost úsečky A→B od počátku. */
+function segmentDistance(ax, ay, az, bx, by, bz) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dz = bz - az;
+  const lengthSq = dx * dx + dy * dy + dz * dz;
+  const t = lengthSq > 0 ? Math.min(Math.max(-(ax * dx + ay * dy + az * dz) / lengthSq, 0), 1) : 0;
+  return Math.hypot(ax + dx * t, ay + dy * t, az + dz * t);
+}
+
+function formatSpeed(kmPerSecond) {
+  return `${kmPerSecond.toLocaleString('cs-CZ', { maximumFractionDigits: kmPerSecond < 10 ? 2 : 1 })} km/s`;
 }
 
 /** „1 těleso", „3 tělesa", „7 těles". */
